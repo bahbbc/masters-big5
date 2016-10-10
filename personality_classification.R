@@ -1,467 +1,319 @@
 library(caret)
 library(e1071)
 library(gbm)
+set.seed(78)
+
+personalities <- read.csv('personality-normalized.csv')
+personalities <- sapply(personalities, function(x) as.numeric(as.matrix(x)))
+personalities <- as.data.frame(personalities)
 
 # remove texts with few words
 
-new_personalities <- personalities[personalities$words > 500,]
+new_personalities <- personalities[personalities$items > 780,]
 
-# divide personalities in half (using mairesse division)
+create_partition <- function(personality){
+  training_data_rows <- createDataPartition(new_personalities[,personality], p = .7, list = FALSE)
+  train_data <- new_personalities[training_data_rows,]
+  test_data <- new_personalities[-training_data_rows,]
+  list(train_data, test_data)
+}
 
-op_1 <- new_personalities[new_personalities$extraversion_m == 1,]
-op_2 <- new_personalities[new_personalities$extraversion_m == 0,]
+create_ober_partition <- function(personality){
+  op_1 <- new_personalities[new_personalities[personality] == 1,]
+  op_2 <- new_personalities[new_personalities[personality] == 0,]
+  
+  new_personalities <- rbind(op_1, op_2)
+  new_personalities <- new_personalities[sample(1:nrow(new_personalities)),]
+  
+  training_data_rows <- createDataPartition(new_personalities[,personality], p = .7, list = FALSE)
+  train_data <- new_personalities[training_data_rows,]
+  test_data <- new_personalities[-training_data_rows,]
+  list(train_data, test_data)
+}
 
-#fazer um shuffle com esses dados
+train_gbm <- function(personality, attributes, train_data, test_data){
+  gbm_model <- train(pre_proc_func_gbm, data = train_data, method = "gbm", trControl = trainControl(method = "repeatedcv", number = 4, repeats = 4), verbose = FALSE)
+  truth_table <- table(gbm_model, test_data[personality])
+  
+  precision <- truth_table[4]/(truth_table[4] + truth_table[3])
+  recall <- truth_table[4]/(truth_table[4] + truth_table[2])
+  accuracy <- (truth_table[1] + truth_table[4])/(truth_table[1] + truth_table[2] + truth_table[3] + truth_table[4])
+  f_measure <- (precision * recall)/(precision + recall)
+  print('-----GBM-------')
+  print(truth_table)
+  print(paste("precision", precision, 'recall', recall, 'accuracy', accuracy, 'f-measure', f_measure))
+  print('--------------')
+}
 
-extra_sorted_m <- rbind(op_1, op_2)
+train_svm <- function(personality, attributes, train_data, test_data){
+  svm_model <- svm(attributes, data = train_data)
+  truth_table <- table(predict(svm_model, test_data), test_data[,personality])
+  
+  precision <- truth_table[4]/(truth_table[4] + truth_table[3])
+  recall <- truth_table[4]/(truth_table[4] + truth_table[2])
+  accuracy <- (truth_table[1] + truth_table[4])/(truth_table[1] + truth_table[2] + truth_table[3] + truth_table[4])
+  f_measure <- (precision * recall)/(precision + recall)
+  print('-----SVM-------')
+  print(truth_table)
+  print(paste("precision", precision, 'recall', recall, 'accuracy', accuracy, 'f-measure', f_measure))
+  print('--------------')
+}
 
-# separate train and test sets
+### EXTRAVERSION
 
-set.seed(78)
-training_data_rows <- createDataPartition(extra_sorted_m$extraversion_m, p = .8, list = FALSE)
-train_data <- extra_sorted_m[training_data_rows,]
-test_data <- extra_sorted_m[-training_data_rows,]
+data_set <- create_partition('extraversion_m')
 
-#EXTRAVERSION
+### PRE PROC
+print('PRE PROC')
+attributes <- (as.factor(extraversion_m) ~ skip + compound+ hashtags+ links+ punct + questions+ exclam+ numbers+ upcase+ lowcase+ firstup+ pt.lexicon + added+ verb.pro+ names+ en.lexicon+ rewrite+ mispell+ foreign+ emo. + emo..1 + emo..2 + laugh+ emph+ echars+ unkn)
+train_svm('extraversion_m', attributes, data_set[[1]], data_set[[2]])
 
-# SVM 
+### GRAMMAR
+print('GRAMMAR')
+attributes <- (as.factor(extraversion_m) ~ m+f+s+p+aument+dimin+superlat+N+A+PREP+CONJ+ADV+PREFIX+SIGLA+ABREV+INTERJ+DET+def+indef+NUM+numC+numO+numM+numF+PRO+proDem+proIndef+proRel+proInterr+proTrat+proPoss+proPess+acusativa+dativa+nominativa+obliqua+reflexa+p1+p2+p3+V+VW+VG+VK+VP+VI+VJ+VF+VQ+VS+VT+VU+VY+VC+V1s+V2s+V3s+V1p+V2p+V3p)
+train_svm('extraversion_m', attributes, data_set[[1]], data_set[[2]])
 
-#LIWC
-svm_extra_ma_liwc <- svm(~ extraversion_m + X1funct + X2pronoun + X3ppron +  X4i +  X5we +  X6you +  X7shehe +  X8they +  X9ipron +  X10article +  X11verb +  X12auxverb +  X13past +  X14present +  X15future +  X16adverb +  X17preps +  X18conj +  X19negate +  X20quant +  X21number +  X22swear +  X23social +  X24family +  X25friend +  X26humans +  X27affect +  X28posemo +  X29negemo +  X30anx +  X31anger +  X32sad +  X33cogmech +  X34insight +  X35cause +  X36discrep +  X37tentat +  X38certain +  X39inhib +  X40incl +  X41excl +  X42percept +  X43see +  X44hear +  X45feel +  X46bio +  X47body +  X48health +  X49sexual +  X50ingest +  X51relativ +  X52motion +  X53space +  X54time +  X55work +  X56achieve +  X57leisure +  X58home +  X59money +  X60relig +  X61death +  X62assent +  X63nonfl +  X64filler, data = train_data, gamma = 0.1)
-pred_svm_extra_ma_liwc <- predict(svm_extra_ma_liwc, test_data)
-tb_svm_extra_ma_liwc <- table(as.numeric(pred_svm_extra_ma_liwc), test_data$extraversion_m)
-precision(tb_svm_extra_ma_liwc)
-recall(tb_svm_extra_ma_liwc)
-F_meas(tb_svm_extra_ma_liwc)
+### LIWC
+print('LIWC')
+attributes <- as.factor(extraversion_m) ~ X1funct + X2pronoun + X3ppron +  X4i +  X5we +  X6you +  X7shehe +  X8they +  X9ipron +  X10article +  X11verb +  X12auxverb +  X13past +  X14present +  X15future +  X16adverb +  X17preps +  X18conj +  X19negate +  X20quant +  X21number +  X22swear +  X23social +  X24family +  X25friend +  X26humans +  X27affect +  X28posemo +  X29negemo +  X30anx +  X31anger +  X32sad +  X33cogmech +  X34insight +  X35cause +  X36discrep +  X37tentat +  X38certain +  X39inhib +  X40incl +  X41excl +  X42percept +  X43see +  X44hear +  X45feel +  X46bio +  X47body +  X48health +  X49sexual +  X50ingest +  X51relativ +  X52motion +  X53space +  X54time +  X55work +  X56achieve +  X57leisure +  X58home +  X59money +  X60relig +  X61death +  X62assent +  X63nonfl +  X64filler 
+train_svm('extraversion_m', attributes, data_set[[1]], data_set[[2]])
 
-#SOCIAL
-svm_extra_ma_social <- svm(~ extraversion_m +   skip + compound + sentences + chars + allTokens + wordTokens + hashtags + links + punct + questions + exclam + numbers + upcase + lowcase + firstup + pt.lexicon + added + verb.pro + names + en.lexicon + rewrite + mispell + homograph + foreign + emo. + emo..1 + emo.. + laugh + emph + echars + unkn, data = train_data, gamma = 0.1)
-pred_svm_extra_ma_social <- predict(svm_extra_ma_social, test_data)
-tb_svm_extra_ma_social <- table(as.numeric(pred_svm_extra_ma_social), test_data$extraversion_m)
-precision(tb_svm_extra_ma_social)
-recall(tb_svm_extra_ma_social)
-F_meas(tb_svm_extra_ma_social)
-
-
-#GRAMMAR
-svm_extra_ma_gram <- svm(~ extraversion_m + m+f+s+p+aument+dimin+superlat+N+A+PREP+CONJ+ADV+PREFIX+SIGLA+ABREV+INTERJ+DET+def+indef+NUM+numC+numO+numM+numF+PRO+proDem+proIndef+proRel+proInterr+proTrat+proPoss+proPess+acusativa+dativa+nominativa+obliqua+reflexa+p1+p2+p3+V+VW+VG+VK+VP+VI+VJ+VF+VQ+VS+VT+VU+VY+VC+V1s+V2s+V3s+V1p+V2p+V3p, data = train_data, gamma = 0.1)
-pred_svm_extra_ma_gram <- predict(svm_extra_ma_gram, test_data)
-tb_svm_extra_ma_gram <- table(as.numeric(pred_svm_extra_ma_gram), test_data$extraversion_m)
-precision(tb_svm_extra_ma_gram)
-recall(tb_svm_extra_ma_gram)
-F_meas(tb_svm_extra_ma_gram)
-
-#ALL
-svm_extra_ma_all <- svm(~ extraversion_m +  X1funct + X2pronoun + X3ppron + X4i + X5we + X6you + X7shehe + X8they + X9ipron + X10article + X11verb + X12auxverb + X13past + X14present + X15future + X16adverb + X17preps + X18conj + X19negate + X20quant + X21number + X22swear + X23social + X24family + X25friend + X26humans + X27affect + X28posemo + X29negemo + X30anx + X31anger + X32sad + X33cogmech + X34insight + X35cause + X36discrep + X37tentat + X38certain + X39inhib + X40incl + X41excl + X42percept + X43see + X44hear + X45feel + X46bio + X47body + X48health + X49sexual + X50ingest + X51relativ + X52motion + X53space + X54time + X55work + X56achieve + X57leisure + X58home + X59money + X60relig + X61death + X62assent + X63nonfl + X64filler +  skip + compound + sentences + chars + allTokens + wordTokens + hashtags + links + punct + questions + exclam + numbers + upcase + lowcase + firstup + pt.lexicon + added + verb.pro + names + en.lexicon + rewrite + mispell + homograph + foreign + emo. + emo..1 + emo.. + laugh + emph + echars + unkn +  m + f + s + p + aument + dimin + superlat + N + A + PREP + CONJ + ADV + PREFIX + SIGLA + ABREV + INTERJ + DET + def + indef + NUM + numC + numO + numM + numF + PRO + proDem + proIndef + proRel + proInterr + proTrat + proPoss + proPess + acusativa + dativa + nominativa + obliqua + reflexa + p1 + p2 + p3 + V + VW + VG + VK + VP + VI + VJ + VF + VQ + VS + VT + VU + VY + VC + V1s + V2s + V3s + V1p + V2p + V3p, data = train_data, gamma = 0.1)
-pred_svm_extra_ma_all <- predict(svm_extra_ma_all, test_data)
-tb_svm_extra_ma_all <- table(as.numeric(pred_svm_extra_ma_all), test_data$extraversion_m)
-precision(tb_svm_extra_ma_all)
-recall(tb_svm_extra_ma_all)
-F_meas(tb_svm_extra_ma_all)
-
-# BOOSTED TREES
-
-#LIWC
-gbm_extra_ma_liwc <- train(as.factor(extraversion_m) ~ X1funct + X2pronoun + X3ppron +  X4i +  X5we +  X6you +  X7shehe +  X8they +  X9ipron +  X10article +  X11verb +  X12auxverb +  X13past +  X14present +  X15future +  X16adverb +  X17preps +  X18conj +  X19negate +  X20quant +  X21number +  X22swear +  X23social +  X24family +  X25friend +  X26humans +  X27affect +  X28posemo +  X29negemo +  X30anx +  X31anger +  X32sad +  X33cogmech +  X34insight +  X35cause +  X36discrep +  X37tentat +  X38certain +  X39inhib +  X40incl +  X41excl +  X42percept +  X43see +  X44hear +  X45feel +  X46bio +  X47body +  X48health +  X49sexual +  X50ingest +  X51relativ +  X52motion +  X53space +  X54time +  X55work +  X56achieve +  X57leisure +  X58home +  X59money +  X60relig +  X61death +  X62assent +  X63nonfl +  X64filler, data = train_data, method="gbm", verbose = FALSE)
-pred_gbm_extra_ma_liwc <- predict(gbm_extra_ma_liwc, test_data)
-tb_gbm_extra_ma_liwc <- table(pred_gbm_extra_ma_liwc, test_data$extraversion_m)
-precision(tb_gbm_extra_ma_liwc)
-recall(tb_gbm_extra_ma_liwc)
-F_meas(tb_gbm_extra_ma_liwc)
-
-#SOCIAL
-gbm_extra_ma_social <- train(as.factor(extraversion_m) ~   skip + compound + sentences + chars + allTokens + wordTokens + hashtags + links + punct + questions + exclam + numbers + upcase + lowcase + firstup + pt.lexicon + added + verb.pro + names + en.lexicon + rewrite + mispell + homograph + foreign + emo. + emo..1 + emo.. + laugh + emph + echars + unkn, data = train_data, method="gbm", verbose = FALSE)
-pred_gbm_extra_ma_social <- predict(gbm_extra_ma_social, test_data)
-tb_gbm_extra_ma_social <- table(pred_gbm_extra_ma_social, test_data$extraversion_m)
-precision(tb_gbm_extra_ma_social)
-recall(tb_gbm_extra_ma_social)
-F_meas(tb_gbm_extra_ma_social)
-
-#GRAMMAR
-gbm_extra_ma_gram <- train(as.factor(extraversion_m) ~ m+f+s+p+aument+dimin+superlat+N+A+PREP+CONJ+ADV+PREFIX+SIGLA+ABREV+INTERJ+DET+def+indef+NUM+numC+numO+numM+numF+PRO+proDem+proIndef+proRel+proInterr+proTrat+proPoss+proPess+acusativa+dativa+nominativa+obliqua+reflexa+p1+p2+p3+V+VW+VG+VK+VP+VI+VJ+VF+VQ+VS+VT+VU+VY+VC+V1s+V2s+V3s+V1p+V2p+V3p, data = train_data, method="gbm", verbose = FALSE)
-pred_gbm_extra_ma_gram <- predict(gbm_extra_ma_gram, test_data)
-tb_gbm_extra_ma_gram <- table(pred_gbm_extra_ma_gram, test_data$extraversion_m)
-precision(tb_gbm_extra_ma_gram)
-recall(tb_gbm_extra_ma_gram)
-F_meas(tb_gbm_extra_ma_gram)
-
-#ALL
-gbl_extra_ma_all <- train(as.factor(extraversion_m) ~  X1funct + X2pronoun + X3ppron + X4i + X5we + X6you + X7shehe + X8they + X9ipron + X10article + X11verb + X12auxverb + X13past + X14present + X15future + X16adverb + X17preps + X18conj + X19negate + X20quant + X21number + X22swear + X23social + X24family + X25friend + X26humans + X27affect + X28posemo + X29negemo + X30anx + X31anger + X32sad + X33cogmech + X34insight + X35cause + X36discrep + X37tentat + X38certain + X39inhib + X40incl + X41excl + X42percept + X43see + X44hear + X45feel + X46bio + X47body + X48health + X49sexual + X50ingest + X51relativ + X52motion + X53space + X54time + X55work + X56achieve + X57leisure + X58home + X59money + X60relig + X61death + X62assent + X63nonfl + X64filler +  skip + compound + sentences + chars + allTokens + wordTokens + hashtags + links + punct + questions + exclam + numbers + upcase + lowcase + firstup + pt.lexicon + added + verb.pro + names + en.lexicon + rewrite + mispell + homograph + foreign + emo. + emo..1 + emo.. + laugh + emph + echars + unkn +  m + f + s + p + aument + dimin + superlat + N + A + PREP + CONJ + ADV + PREFIX + SIGLA + ABREV + INTERJ + DET + def + indef + NUM + numC + numO + numM + numF + PRO + proDem + proIndef + proRel + proInterr + proTrat + proPoss + proPess + acusativa + dativa + nominativa + obliqua + reflexa + p1 + p2 + p3 + V + VW + VG + VK + VP + VI + VJ + VF + VQ + VS + VT + VU + VY + VC + V1s + V2s + V3s + V1p + V2p + V3p, data = train_data, method="gbm", verbose = FALSE)
-pred_gbl_extra_ma_all <- predict(gbl_extra_ma_all, test_data)
-tb_gbl_extra_ma_all <- table(pred_gbl_extra_ma_all, test_data$extraversion_m)
-precision(tb_gbl_extra_ma_all)
-recall(tb_gbl_extra_ma_all)
-F_meas(tb_gbl_extra_ma_all)
+### ALL
+print('ALL')
+attributes <- (as.factor(extraversion_m) ~ sentences + items + chars + allTokens + wordTokens +  m+f+s+p+aument+dimin+superlat+N+A+PREP+CONJ+ADV+PREFIX+SIGLA+ABREV+INTERJ+DET+def+indef+NUM+numC+numO+numM+numF+PRO+proDem+proIndef+proRel+proInterr+proTrat+proPoss+proPess+acusativa+dativa+nominativa+obliqua+reflexa+p1+p2+p3+V+VW+VG+VK+VP+VI+VJ+VF+VQ+VS+VT+VU+VY+VC+V1s+V2s+V3s+V1p+V2p+V3p+X1funct + X2pronoun + X3ppron +  X4i +  X5we +  X6you +  X7shehe +  X8they +  X9ipron +  X10article +  X11verb +  X12auxverb +  X13past +  X14present +  X15future +  X16adverb +  X17preps +  X18conj +  X19negate +  X20quant +  X21number +  X22swear +  X23social +  X24family +  X25friend +  X26humans +  X27affect +  X28posemo +  X29negemo +  X30anx +  X31anger +  X32sad +  X33cogmech +  X34insight +  X35cause +  X36discrep +  X37tentat +  X38certain +  X39inhib +  X40incl +  X41excl +  X42percept +  X43see +  X44hear +  X45feel +  X46bio +  X47body +  X48health +  X49sexual +  X50ingest +  X51relativ +  X52motion +  X53space +  X54time +  X55work +  X56achieve +  X57leisure +  X58home +  X59money +  X60relig +  X61death +  X62assent +  X63nonfl +  X64filler + skip + compound+ hashtags+ links+ punct + questions+ exclam+ numbers+ upcase+ lowcase+ firstup+ pt.lexicon + added+ verb.pro+ names+ en.lexicon+ rewrite+ mispell+ foreign+ emo. + emo..1 + emo..2 + laugh+ emph+ echars+ unkn)
+train_svm('extraversion_m', attributes, data_set[[1]], data_set[[2]])
 
 ##############################################
-op_1 <- new_personalities[new_personalities$agreeabeness_m == 1,]
-op_2 <- new_personalities[new_personalities$agreeabeness_m == 0,]
 
-# divide personalities by  (mean + sd) or (mean - sd)
+### AGREEABLENESS
 
-op_2_1 <- new_personalities[new_personalities$agreeableness_ober_2 == -1,]
-op_2_2 = new_personalities[new_personalities$agreeableness_ober_2 == 1,]
+data_set <- create_partition('agreeabeness_m')
 
-#fazer um shuffle com esses dados
+### PRE PROC
+print('PRE PROC')
+attributes <- (as.factor(agreeabeness_m) ~ skip + compound+ hashtags+ links+ punct + questions+ exclam+ numbers+ upcase+ lowcase+ firstup+ pt.lexicon + added+ verb.pro+ names+ en.lexicon+ rewrite+ mispell+ foreign+ emo. + emo..1 + emo..2 + laugh+ emph+ echars+ unkn)
+train_svm('agreeabeness_m', attributes, data_set[[1]], data_set[[2]])
 
-extra_sorted_m <- rbind(op_1, op_2)
-extra_sorted_o <- rbind(op_2_1, op_2_2)
+### GRAMMAR
+print('GRAMMAR')
+attributes <- (as.factor(agreeabeness_m) ~ m+f+s+p+aument+dimin+superlat+N+A+PREP+CONJ+ADV+PREFIX+SIGLA+ABREV+INTERJ+DET+def+indef+NUM+numC+numO+numM+numF+PRO+proDem+proIndef+proRel+proInterr+proTrat+proPoss+proPess+acusativa+dativa+nominativa+obliqua+reflexa+p1+p2+p3+V+VW+VG+VK+VP+VI+VJ+VF+VQ+VS+VT+VU+VY+VC+V1s+V2s+V3s+V1p+V2p+V3p)
+train_svm('agreeabeness_m', attributes, data_set[[1]], data_set[[2]])
 
-paste(dim(extra_sorted_o)[1], dim(extra_sorted_m)[1])
+### LIWC
+print('LIWC')
+attributes <- as.factor(agreeabeness_m) ~ X1funct + X2pronoun + X3ppron +  X4i +  X5we +  X6you +  X7shehe +  X8they +  X9ipron +  X10article +  X11verb +  X12auxverb +  X13past +  X14present +  X15future +  X16adverb +  X17preps +  X18conj +  X19negate +  X20quant +  X21number +  X22swear +  X23social +  X24family +  X25friend +  X26humans +  X27affect +  X28posemo +  X29negemo +  X30anx +  X31anger +  X32sad +  X33cogmech +  X34insight +  X35cause +  X36discrep +  X37tentat +  X38certain +  X39inhib +  X40incl +  X41excl +  X42percept +  X43see +  X44hear +  X45feel +  X46bio +  X47body +  X48health +  X49sexual +  X50ingest +  X51relativ +  X52motion +  X53space +  X54time +  X55work +  X56achieve +  X57leisure +  X58home +  X59money +  X60relig +  X61death +  X62assent +  X63nonfl +  X64filler 
+train_svm('agreeabeness_m', attributes, data_set[[1]], data_set[[2]])
 
-set.seed(78)
-training_data_rows <- createDataPartition(extra_sorted_m$agreeabeness_m, p = .8, list = FALSE)
-train_data <- extra_sorted_m[training_data_rows,]
-test_data <- extra_sorted_m[-training_data_rows,]
-
-paste(dim(extra_sorted_o)[1], dim(extra_sorted_m)[1])
-
-# AGREABLENESS
-
-#SVM
-
-#LIWC
-svm_agrea_ma_liwc <- svm(~ agreeabeness_m + X1funct + X2pronoun + X3ppron +  X4i +  X5we +  X6you +  X7shehe +  X8they +  X9ipron +  X10article +  X11verb +  X12auxverb +  X13past +  X14present +  X15future +  X16adverb +  X17preps +  X18conj +  X19negate +  X20quant +  X21number +  X22swear +  X23social +  X24family +  X25friend +  X26humans +  X27affect +  X28posemo +  X29negemo +  X30anx +  X31anger +  X32sad +  X33cogmech +  X34insight +  X35cause +  X36discrep +  X37tentat +  X38certain +  X39inhib +  X40incl +  X41excl +  X42percept +  X43see +  X44hear +  X45feel +  X46bio +  X47body +  X48health +  X49sexual +  X50ingest +  X51relativ +  X52motion +  X53space +  X54time +  X55work +  X56achieve +  X57leisure +  X58home +  X59money +  X60relig +  X61death +  X62assent +  X63nonfl +  X64filler, data = train_data, gamma = 0.1)
-pred_svm_agrea_ma_liwc <- predict(svm_agrea_ma_liwc, test_data)
-tb_svm_agrea_ma_liwc <- table(as.numeric(pred_svm_agrea_ma_liwc), test_data$agreeabeness_m)
-precision(tb_svm_agrea_ma_liwc)
-recall(tb_svm_agrea_ma_liwc)
-F_meas(tb_svm_agrea_ma_liwc)
-
-#SOCIAL
-svm_agrea_ma_social <- svm(~ agreeabeness_m + skip + compound + sentences + chars + allTokens + wordTokens + hashtags + links + punct + questions + exclam + numbers + upcase + lowcase + firstup + pt.lexicon + added + verb.pro + names + en.lexicon + rewrite + mispell + homograph + foreign + emo. + emo..1 + emo.. + laugh + emph + echars + unkn, data = train_data, gamma = 0.1)
-pred_svm_agrea_ma_social <- predict(svm_agrea_ma_social, test_data)
-tb_svm_agrea_ma_social <- table(as.numeric(pred_svm_agrea_ma_social), test_data$agreeabeness_m)
-precision(tb_svm_agrea_ma_social)
-recall(tb_svm_agrea_ma_social)
-F_meas(tb_svm_agrea_ma_social)
-
-#GRAMMAR
-svm_agrea_ma_gram <- svm(~ agreeabeness_m + m+f+s+p+aument+dimin+superlat+N+A+PREP+CONJ+ADV+PREFIX+SIGLA+ABREV+INTERJ+DET+def+indef+NUM+numC+numO+numM+numF+PRO+proDem+proIndef+proRel+proInterr+proTrat+proPoss+proPess+acusativa+dativa+nominativa+obliqua+reflexa+p1+p2+p3+V+VW+VG+VK+VP+VI+VJ+VF+VQ+VS+VT+VU+VY+VC+V1s+V2s+V3s+V1p+V2p+V3p, data = train_data, gamma = 0.1)
-pred_svm_agrea_ma_gram <- predict(svm_agrea_ma_gram, test_data)
-tb_svm_agrea_ma_gram <- table(as.numeric(pred_svm_agrea_ma_gram), test_data$agreeabeness_m)
-precision(tb_svm_agrea_ma_gram)
-recall(tb_svm_agrea_ma_gram)
-F_meas(tb_svm_agrea_ma_gram)
-
-#ALL
-svm_agrea_ma_all <- svm(~ agreeabeness_m +  X1funct + X2pronoun + X3ppron + X4i + X5we + X6you + X7shehe + X8they + X9ipron + X10article + X11verb + X12auxverb + X13past + X14present + X15future + X16adverb + X17preps + X18conj + X19negate + X20quant + X21number + X22swear + X23social + X24family + X25friend + X26humans + X27affect + X28posemo + X29negemo + X30anx + X31anger + X32sad + X33cogmech + X34insight + X35cause + X36discrep + X37tentat + X38certain + X39inhib + X40incl + X41excl + X42percept + X43see + X44hear + X45feel + X46bio + X47body + X48health + X49sexual + X50ingest + X51relativ + X52motion + X53space + X54time + X55work + X56achieve + X57leisure + X58home + X59money + X60relig + X61death + X62assent + X63nonfl + X64filler +  skip + compound + sentences + chars + allTokens + wordTokens + hashtags + links + punct + questions + exclam + numbers + upcase + lowcase + firstup + pt.lexicon + added + verb.pro + names + en.lexicon + rewrite + mispell + homograph + foreign + emo. + emo..1 + emo.. + laugh + emph + echars + unkn +  m + f + s + p + aument + dimin + superlat + N + A + PREP + CONJ + ADV + PREFIX + SIGLA + ABREV + INTERJ + DET + def + indef + NUM + numC + numO + numM + numF + PRO + proDem + proIndef + proRel + proInterr + proTrat + proPoss + proPess + acusativa + dativa + nominativa + obliqua + reflexa + p1 + p2 + p3 + V + VW + VG + VK + VP + VI + VJ + VF + VQ + VS + VT + VU + VY + VC + V1s + V2s + V3s + V1p + V2p + V3p, data = train_data, gamma = 0.1)
-pred_svm_agrea_ma_all <- predict(svm_agrea_ma_all, test_data)
-tb_svm_agrea_ma_all <- table(as.numeric(pred_svm_agrea_ma_all), test_data$agreeabeness_m)
-precision(tb_svm_agrea_ma_all)
-recall(tb_svm_agrea_ma_all)
-F_meas(tb_svm_agrea_ma_all)
-
-# BOOSTED TREES
-
-#LIWC
-gbm_agre_ma_liwc <- train(as.factor(agreeabeness_m) ~ X1funct + X2pronoun + X3ppron +  X4i +  X5we +  X6you +  X7shehe +  X8they +  X9ipron +  X10article +  X11verb +  X12auxverb +  X13past +  X14present +  X15future +  X16adverb +  X17preps +  X18conj +  X19negate +  X20quant +  X21number +  X22swear +  X23social +  X24family +  X25friend +  X26humans +  X27affect +  X28posemo +  X29negemo +  X30anx +  X31anger +  X32sad +  X33cogmech +  X34insight +  X35cause +  X36discrep +  X37tentat +  X38certain +  X39inhib +  X40incl +  X41excl +  X42percept +  X43see +  X44hear +  X45feel +  X46bio +  X47body +  X48health +  X49sexual +  X50ingest +  X51relativ +  X52motion +  X53space +  X54time +  X55work +  X56achieve +  X57leisure +  X58home +  X59money +  X60relig +  X61death +  X62assent +  X63nonfl +  X64filler, data = train_data, method="gbm", verbose = FALSE)
-pred_gbm_agre_ma_liwc <- predict(gbm_agre_ma_liwc, test_data)
-tb_gbm_agre_ma_liwc <- table(pred_gbm_agre_ma_liwc, test_data$agreeabeness_m)
-precision(tb_gbm_agre_ma_liwc)
-recall(tb_gbm_agre_ma_liwc)
-F_meas(tb_gbm_agre_ma_liwc)
-
-#SOCIAL
-gbm_agre_ma_social <- train(as.factor(agreeabeness_m) ~   skip + compound + sentences + chars + allTokens + wordTokens + hashtags + links + punct + questions + exclam + numbers + upcase + lowcase + firstup + pt.lexicon + added + verb.pro + names + en.lexicon + rewrite + mispell + homograph + foreign + emo. + emo..1 + emo.. + laugh + emph + echars + unkn, data = train_data, method="gbm", verbose = FALSE)
-pred_gbm_agre_ma_social <- predict(gbm_agre_ma_social, test_data)
-tb_gbm_agre_ma_social <- table(pred_gbm_agre_ma_social, test_data$agreeabeness_m)
-precision(tb_gbm_agre_ma_social)
-recall(tb_gbm_agre_ma_social)
-F_meas(tb_gbm_agre_ma_social)
-
-#GRAMMAR
-gbm_agre_ma_gram <- train(as.factor(agreeabeness_m) ~ m+f+s+p+aument+dimin+superlat+N+A+PREP+CONJ+ADV+PREFIX+SIGLA+ABREV+INTERJ+DET+def+indef+NUM+numC+numO+numM+numF+PRO+proDem+proIndef+proRel+proInterr+proTrat+proPoss+proPess+acusativa+dativa+nominativa+obliqua+reflexa+p1+p2+p3+V+VW+VG+VK+VP+VI+VJ+VF+VQ+VS+VT+VU+VY+VC+V1s+V2s+V3s+V1p+V2p+V3p, data = train_data, method="gbm", verbose = FALSE)
-pred_gbm_agre_ma_gram <- predict(gbm_agre_ma_gram, test_data)
-tb_gbm_agre_ma_gram <- table(pred_gbm_agre_ma_gram, test_data$agreeabeness_m)
-precision(tb_gbm_agre_ma_gram)
-recall(tb_gbm_agre_ma_gram)
-F_meas(tb_gbm_agre_ma_gram)
-
-#ALL
-gbl_agre_ma_all <- train(as.factor(agreeabeness_m) ~  X1funct + X2pronoun + X3ppron + X4i + X5we + X6you + X7shehe + X8they + X9ipron + X10article + X11verb + X12auxverb + X13past + X14present + X15future + X16adverb + X17preps + X18conj + X19negate + X20quant + X21number + X22swear + X23social + X24family + X25friend + X26humans + X27affect + X28posemo + X29negemo + X30anx + X31anger + X32sad + X33cogmech + X34insight + X35cause + X36discrep + X37tentat + X38certain + X39inhib + X40incl + X41excl + X42percept + X43see + X44hear + X45feel + X46bio + X47body + X48health + X49sexual + X50ingest + X51relativ + X52motion + X53space + X54time + X55work + X56achieve + X57leisure + X58home + X59money + X60relig + X61death + X62assent + X63nonfl + X64filler +  skip + compound + sentences + chars + allTokens + wordTokens + hashtags + links + punct + questions + exclam + numbers + upcase + lowcase + firstup + pt.lexicon + added + verb.pro + names + en.lexicon + rewrite + mispell + homograph + foreign + emo. + emo..1 + emo.. + laugh + emph + echars + unkn +  m + f + s + p + aument + dimin + superlat + N + A + PREP + CONJ + ADV + PREFIX + SIGLA + ABREV + INTERJ + DET + def + indef + NUM + numC + numO + numM + numF + PRO + proDem + proIndef + proRel + proInterr + proTrat + proPoss + proPess + acusativa + dativa + nominativa + obliqua + reflexa + p1 + p2 + p3 + V + VW + VG + VK + VP + VI + VJ + VF + VQ + VS + VT + VU + VY + VC + V1s + V2s + V3s + V1p + V2p + V3p, data = train_data, method="gbm", verbose = FALSE)
-pred_gbl_agre_ma_all <- predict(gbl_agre_ma_all, test_data)
-tb_gbl_agre_ma_all <- table(pred_gbl_agre_ma_all, test_data$agreeabeness_m)
-precision(tb_gbl_agre_ma_all)
-recall(tb_gbl_agre_ma_all)
-F_meas(tb_gbl_agre_ma_all)
+### ALL
+print('ALL')
+attributes <- (as.factor(agreeabeness_m) ~ sentences + items + chars + allTokens + wordTokens +  m+f+s+p+aument+dimin+superlat+N+A+PREP+CONJ+ADV+PREFIX+SIGLA+ABREV+INTERJ+DET+def+indef+NUM+numC+numO+numM+numF+PRO+proDem+proIndef+proRel+proInterr+proTrat+proPoss+proPess+acusativa+dativa+nominativa+obliqua+reflexa+p1+p2+p3+V+VW+VG+VK+VP+VI+VJ+VF+VQ+VS+VT+VU+VY+VC+V1s+V2s+V3s+V1p+V2p+V3p+X1funct + X2pronoun + X3ppron +  X4i +  X5we +  X6you +  X7shehe +  X8they +  X9ipron +  X10article +  X11verb +  X12auxverb +  X13past +  X14present +  X15future +  X16adverb +  X17preps +  X18conj +  X19negate +  X20quant +  X21number +  X22swear +  X23social +  X24family +  X25friend +  X26humans +  X27affect +  X28posemo +  X29negemo +  X30anx +  X31anger +  X32sad +  X33cogmech +  X34insight +  X35cause +  X36discrep +  X37tentat +  X38certain +  X39inhib +  X40incl +  X41excl +  X42percept +  X43see +  X44hear +  X45feel +  X46bio +  X47body +  X48health +  X49sexual +  X50ingest +  X51relativ +  X52motion +  X53space +  X54time +  X55work +  X56achieve +  X57leisure +  X58home +  X59money +  X60relig +  X61death +  X62assent +  X63nonfl +  X64filler + skip + compound+ hashtags+ links+ punct + questions+ exclam+ numbers+ upcase+ lowcase+ firstup+ pt.lexicon + added+ verb.pro+ names+ en.lexicon+ rewrite+ mispell+ foreign+ emo. + emo..1 + emo..2 + laugh+ emph+ echars+ unkn)
+train_svm('agreeabeness_m', attributes, data_set[[1]], data_set[[2]])
 
 ############################
 
-op_1 <- new_personalities[new_personalities$conscientiousness_m == 1,]
-op_2 <- new_personalities[new_personalities$conscientiousness_m == 0,]
-
-# divide personalities by  (mean + sd) or (mean - sd)
-
-op_2_1 <- new_personalities[new_personalities$conscientiousness_ober_2 == -1,]
-op_2_2 = new_personalities[new_personalities$conscientiousness_ober_2 == 1,]
-
-#fazer um shuffle com esses dados
-
-extra_sorted_m <- rbind(op_1, op_2)
-extra_sorted_o <- rbind(op_2_1, op_2_2)
-
-paste(dim(extra_sorted_o)[1], dim(extra_sorted_m)[1])
-
-set.seed(78)
-training_data_rows <- createDataPartition(extra_sorted_m$conscientiousness_m, p = .8, list = FALSE)
-train_data <- extra_sorted_m[training_data_rows,]
-test_data <- extra_sorted_m[-training_data_rows,]
-
-paste(dim(extra_sorted_o)[1], dim(extra_sorted_m)[1])
 #CONSCIENTIOUSNESS
 
-#LIWC
-svm_cons_ma_liwc <- svm(~ conscientiousness_m + X1funct + X2pronoun + X3ppron +  X4i +  X5we +  X6you +  X7shehe +  X8they +  X9ipron +  X10article +  X11verb +  X12auxverb +  X13past +  X14present +  X15future +  X16adverb +  X17preps +  X18conj +  X19negate +  X20quant +  X21number +  X22swear +  X23social +  X24family +  X25friend +  X26humans +  X27affect +  X28posemo +  X29negemo +  X30anx +  X31anger +  X32sad +  X33cogmech +  X34insight +  X35cause +  X36discrep +  X37tentat +  X38certain +  X39inhib +  X40incl +  X41excl +  X42percept +  X43see +  X44hear +  X45feel +  X46bio +  X47body +  X48health +  X49sexual +  X50ingest +  X51relativ +  X52motion +  X53space +  X54time +  X55work +  X56achieve +  X57leisure +  X58home +  X59money +  X60relig +  X61death +  X62assent +  X63nonfl +  X64filler, data = train_data, gamma = 0.1)
-pred_svm_cons_ma_liwc <- predict(svm_cons_ma_liwc, test_data)
-tb_svm_cons_ma_liwc <- table(as.numeric(pred_svm_cons_ma_liwc), test_data$conscientiousness_m)
-precision(tb_svm_cons_ma_liwc)
-recall(tb_svm_cons_ma_liwc)
-F_meas(tb_svm_cons_ma_liwc)
-
+data_set <- create_partition('conscientiousness_m')
 
 #SOCIAL
-svm_cons_ma_social <- svm(~ conscientiousness_m + skip + compound + sentences + chars + allTokens + wordTokens + hashtags + links + punct + questions + exclam + numbers + upcase + lowcase + firstup + pt.lexicon + added + verb.pro + names + en.lexicon + rewrite + mispell + homograph + foreign + emo. + emo..1 + emo.. + laugh + emph + echars + unkn, data = train_data, gamma = 0.1)
-pred_svm_cons_ma_social <- predict(svm_cons_ma_social, test_data)
-tb_svm_cons_ma_social <- table(as.numeric(pred_svm_cons_ma_social), test_data$conscientiousness_m)
-precision(tb_svm_cons_ma_social)
-recall(tb_svm_cons_ma_social)
-F_meas(tb_svm_cons_ma_social)
+attributes <- (as.factor(conscientiousness_m) ~ sentences + items + chars + allTokens + wordTokens +  m+f+s+p+aument+dimin+superlat+N+A+PREP+CONJ+ADV+PREFIX+SIGLA+ABREV+INTERJ+DET+def+indef+NUM+numC+numO+numM+numF+PRO+proDem+proIndef+proRel+proInterr+proTrat+proPoss+proPess+acusativa+dativa+nominativa+obliqua+reflexa+p1+p2+p3+V+VW+VG+VK+VP+VI+VJ+VF+VQ+VS+VT+VU+VY+VC+V1s+V2s+V3s+V1p+V2p+V3p+X1funct + X2pronoun + X3ppron +  X4i +  X5we +  X6you +  X7shehe +  X8they +  X9ipron +  X10article +  X11verb +  X12auxverb +  X13past +  X14present +  X15future +  X16adverb +  X17preps +  X18conj +  X19negate +  X20quant +  X21number +  X22swear +  X23social +  X24family +  X25friend +  X26humans +  X27affect +  X28posemo +  X29negemo +  X30anx +  X31anger +  X32sad +  X33cogmech +  X34insight +  X35cause +  X36discrep +  X37tentat +  X38certain +  X39inhib +  X40incl +  X41excl +  X42percept +  X43see +  X44hear +  X45feel +  X46bio +  X47body +  X48health +  X49sexual +  X50ingest +  X51relativ +  X52motion +  X53space +  X54time +  X55work +  X56achieve +  X57leisure +  X58home +  X59money +  X60relig +  X61death +  X62assent +  X63nonfl +  X64filler + skip + compound+ hashtags+ links+ punct + questions+ exclam+ numbers+ upcase+ lowcase+ firstup+ pt.lexicon + added+ verb.pro+ names+ en.lexicon+ rewrite+ mispell+ foreign+ emo. + emo..1 + emo..2 + laugh+ emph+ echars+ unkn)
+train_svm('conscientiousness_m', attributes, data_set[[1]], data_set[[2]])
 
-#GRAMMAR
-svm_gram_ma_gram <- svm(~ conscientiousness_m + m+f+s+p+aument+dimin+superlat+N+A+PREP+CONJ+ADV+PREFIX+SIGLA+ABREV+INTERJ+DET+def+indef+NUM+numC+numO+numM+numF+PRO+proDem+proIndef+proRel+proInterr+proTrat+proPoss+proPess+acusativa+dativa+nominativa+obliqua+reflexa+p1+p2+p3+V+VW+VG+VK+VP+VI+VJ+VF+VQ+VS+VT+VU+VY+VC+V1s+V2s+V3s+V1p+V2p+V3p, data = train_data, gamma = 0.1)
-pred_svm_gram_ma_gram <- predict(svm_gram_ma_gram, test_data)
-tb_svm_gram_ma_gram <- table(as.numeric(pred_svm_gram_ma_gram), test_data$conscientiousness_m)
-precision(tb_svm_gram_ma_gram)
-recall(tb_svm_gram_ma_gram)
-F_meas(tb_svm_gram_ma_gram)
+### GRAMMAR
+print('GRAMMAR')
+attributes <- (as.factor(conscientiousness_m) ~ m+f+s+p+aument+dimin+superlat+N+A+PREP+CONJ+ADV+PREFIX+SIGLA+ABREV+INTERJ+DET+def+indef+NUM+numC+numO+numM+numF+PRO+proDem+proIndef+proRel+proInterr+proTrat+proPoss+proPess+acusativa+dativa+nominativa+obliqua+reflexa+p1+p2+p3+V+VW+VG+VK+VP+VI+VJ+VF+VQ+VS+VT+VU+VY+VC+V1s+V2s+V3s+V1p+V2p+V3p)
+train_svm('conscientiousness_m', attributes, data_set[[1]], data_set[[2]])
+
+### LIWC
+print('LIWC')
+attributes <- as.factor(conscientiousness_m) ~ X1funct + X2pronoun + X3ppron +  X4i +  X5we +  X6you +  X7shehe +  X8they +  X9ipron +  X10article +  X11verb +  X12auxverb +  X13past +  X14present +  X15future +  X16adverb +  X17preps +  X18conj +  X19negate +  X20quant +  X21number +  X22swear +  X23social +  X24family +  X25friend +  X26humans +  X27affect +  X28posemo +  X29negemo +  X30anx +  X31anger +  X32sad +  X33cogmech +  X34insight +  X35cause +  X36discrep +  X37tentat +  X38certain +  X39inhib +  X40incl +  X41excl +  X42percept +  X43see +  X44hear +  X45feel +  X46bio +  X47body +  X48health +  X49sexual +  X50ingest +  X51relativ +  X52motion +  X53space +  X54time +  X55work +  X56achieve +  X57leisure +  X58home +  X59money +  X60relig +  X61death +  X62assent +  X63nonfl +  X64filler 
+train_svm('conscientiousness_m', attributes, data_set[[1]], data_set[[2]])
 
 #ALL
-svm_cons_ma_all <- svm(~ conscientiousness_m +  X1funct + X2pronoun + X3ppron + X4i + X5we + X6you + X7shehe + X8they + X9ipron + X10article + X11verb + X12auxverb + X13past + X14present + X15future + X16adverb + X17preps + X18conj + X19negate + X20quant + X21number + X22swear + X23social + X24family + X25friend + X26humans + X27affect + X28posemo + X29negemo + X30anx + X31anger + X32sad + X33cogmech + X34insight + X35cause + X36discrep + X37tentat + X38certain + X39inhib + X40incl + X41excl + X42percept + X43see + X44hear + X45feel + X46bio + X47body + X48health + X49sexual + X50ingest + X51relativ + X52motion + X53space + X54time + X55work + X56achieve + X57leisure + X58home + X59money + X60relig + X61death + X62assent + X63nonfl + X64filler +  skip + compound + sentences + chars + allTokens + wordTokens + hashtags + links + punct + questions + exclam + numbers + upcase + lowcase + firstup + pt.lexicon + added + verb.pro + names + en.lexicon + rewrite + mispell + homograph + foreign + emo. + emo..1 + emo.. + laugh + emph + echars + unkn +  m + f + s + p + aument + dimin + superlat + N + A + PREP + CONJ + ADV + PREFIX + SIGLA + ABREV + INTERJ + DET + def + indef + NUM + numC + numO + numM + numF + PRO + proDem + proIndef + proRel + proInterr + proTrat + proPoss + proPess + acusativa + dativa + nominativa + obliqua + reflexa + p1 + p2 + p3 + V + VW + VG + VK + VP + VI + VJ + VF + VQ + VS + VT + VU + VY + VC + V1s + V2s + V3s + V1p + V2p + V3p, data = train_data, gamma = 0.1)
-pred_svm_cons_ma_all <- predict(svm_cons_ma_all, test_data)
-tb_svm_cons_ma_all <- table(as.numeric(pred_svm_cons_ma_all), test_data$conscientiousness_m)
-precision(tb_svm_cons_ma_all)
-recall(tb_svm_cons_ma_all)
-F_meas(tb_svm_cons_ma_all)
-
-
-# BOOSTED TREES
-
-#LIWC
-gbm_cons_ma_liwc <- train(as.factor(conscientiousness_m) ~ X1funct + X2pronoun + X3ppron +  X4i +  X5we +  X6you +  X7shehe +  X8they +  X9ipron +  X10article +  X11verb +  X12auxverb +  X13past +  X14present +  X15future +  X16adverb +  X17preps +  X18conj +  X19negate +  X20quant +  X21number +  X22swear +  X23social +  X24family +  X25friend +  X26humans +  X27affect +  X28posemo +  X29negemo +  X30anx +  X31anger +  X32sad +  X33cogmech +  X34insight +  X35cause +  X36discrep +  X37tentat +  X38certain +  X39inhib +  X40incl +  X41excl +  X42percept +  X43see +  X44hear +  X45feel +  X46bio +  X47body +  X48health +  X49sexual +  X50ingest +  X51relativ +  X52motion +  X53space +  X54time +  X55work +  X56achieve +  X57leisure +  X58home +  X59money +  X60relig +  X61death +  X62assent +  X63nonfl +  X64filler, data = train_data, method="gbm", verbose = FALSE)
-pred_gbm_cons_ma_liwc <- predict(gbm_cons_ma_liwc, test_data)
-tb_gbm_cons_ma_liwc <-  table(pred_gbm_cons_ma_liwc, test_data$conscientiousness_m)
-precision(tb_gbm_cons_ma_liwc)
-recall(tb_gbm_cons_ma_liwc)
-F_meas(tb_gbm_cons_ma_liwc)
-
-#SOCIAL
-gbm_cons_ma_social <- train(as.factor(conscientiousness_m) ~   skip + compound + sentences + chars + allTokens + wordTokens + hashtags + links + punct + questions + exclam + numbers + upcase + lowcase + firstup + pt.lexicon + added + verb.pro + names + en.lexicon + rewrite + mispell + homograph + foreign + emo. + emo..1 + emo.. + laugh + emph + echars + unkn, data = train_data, method="gbm", verbose = FALSE)
-pred_gbm_cons_ma_social <- predict(gbm_cons_ma_social, test_data)
-tb_gbm_cons_ma_social <- table(pred_gbm_cons_ma_social, test_data$conscientiousness_m)
-precision(tb_gbm_cons_ma_social)
-recall(tb_gbm_cons_ma_social)
-F_meas(tb_gbm_cons_ma_social)
-
-#GRAMMAR
-gbm_cons_ma_gram <- train(as.factor(conscientiousness_m) ~ m+f+s+p+aument+dimin+superlat+N+A+PREP+CONJ+ADV+PREFIX+SIGLA+ABREV+INTERJ+DET+def+indef+NUM+numC+numO+numM+numF+PRO+proDem+proIndef+proRel+proInterr+proTrat+proPoss+proPess+acusativa+dativa+nominativa+obliqua+reflexa+p1+p2+p3+V+VW+VG+VK+VP+VI+VJ+VF+VQ+VS+VT+VU+VY+VC+V1s+V2s+V3s+V1p+V2p+V3p, data = train_data, method="gbm", verbose = FALSE)
-pred_gbm_cons_ma_gram <- predict(gbm_cons_ma_gram, test_data)
-tb_gbm_cons_ma_gram <- table(pred_gbm_cons_ma_gram, test_data$conscientiousness_m)
-precision(tb_gbm_cons_ma_gram)
-recall(tb_gbm_cons_ma_gram)
-F_meas(tb_gbm_cons_ma_gram)
-
-#ALL
-
-gbl_cons_ma_all <- train(as.factor(conscientiousness_m) ~  X1funct + X2pronoun + X3ppron + X4i + X5we + X6you + X7shehe + X8they + X9ipron + X10article + X11verb + X12auxverb + X13past + X14present + X15future + X16adverb + X17preps + X18conj + X19negate + X20quant + X21number + X22swear + X23social + X24family + X25friend + X26humans + X27affect + X28posemo + X29negemo + X30anx + X31anger + X32sad + X33cogmech + X34insight + X35cause + X36discrep + X37tentat + X38certain + X39inhib + X40incl + X41excl + X42percept + X43see + X44hear + X45feel + X46bio + X47body + X48health + X49sexual + X50ingest + X51relativ + X52motion + X53space + X54time + X55work + X56achieve + X57leisure + X58home + X59money + X60relig + X61death + X62assent + X63nonfl + X64filler +  skip + compound + sentences + chars + allTokens + wordTokens + hashtags + links + punct + questions + exclam + numbers + upcase + lowcase + firstup + pt.lexicon + added + verb.pro + names + en.lexicon + rewrite + mispell + homograph + foreign + emo. + emo..1 + emo.. + laugh + emph + echars + unkn +  m + f + s + p + aument + dimin + superlat + N + A + PREP + CONJ + ADV + PREFIX + SIGLA + ABREV + INTERJ + DET + def + indef + NUM + numC + numO + numM + numF + PRO + proDem + proIndef + proRel + proInterr + proTrat + proPoss + proPess + acusativa + dativa + nominativa + obliqua + reflexa + p1 + p2 + p3 + V + VW + VG + VK + VP + VI + VJ + VF + VQ + VS + VT + VU + VY + VC + V1s + V2s + V3s + V1p + V2p + V3p, data = train_data, method="gbm", verbose = FALSE)
-pred_gbl_cons_ma_all <- predict(gbl_cons_ma_all, test_data)
-tb_gbl_cons_ma_all <- table(pred_gbl_cons_ma_all, test_data$conscientiousness_m)
-precision(tb_gbl_cons_ma_all)
-recall(tb_gbl_cons_ma_all)
-F_meas(tb_gbl_cons_ma_all)
+print('ALL')
+attributes <- (as.factor(conscientiousness_m) ~ sentences + items + chars + allTokens + wordTokens +  m+f+s+p+aument+dimin+superlat+N+A+PREP+CONJ+ADV+PREFIX+SIGLA+ABREV+INTERJ+DET+def+indef+NUM+numC+numO+numM+numF+PRO+proDem+proIndef+proRel+proInterr+proTrat+proPoss+proPess+acusativa+dativa+nominativa+obliqua+reflexa+p1+p2+p3+V+VW+VG+VK+VP+VI+VJ+VF+VQ+VS+VT+VU+VY+VC+V1s+V2s+V3s+V1p+V2p+V3p+X1funct + X2pronoun + X3ppron +  X4i +  X5we +  X6you +  X7shehe +  X8they +  X9ipron +  X10article +  X11verb +  X12auxverb +  X13past +  X14present +  X15future +  X16adverb +  X17preps +  X18conj +  X19negate +  X20quant +  X21number +  X22swear +  X23social +  X24family +  X25friend +  X26humans +  X27affect +  X28posemo +  X29negemo +  X30anx +  X31anger +  X32sad +  X33cogmech +  X34insight +  X35cause +  X36discrep +  X37tentat +  X38certain +  X39inhib +  X40incl +  X41excl +  X42percept +  X43see +  X44hear +  X45feel +  X46bio +  X47body +  X48health +  X49sexual +  X50ingest +  X51relativ +  X52motion +  X53space +  X54time +  X55work +  X56achieve +  X57leisure +  X58home +  X59money +  X60relig +  X61death +  X62assent +  X63nonfl +  X64filler + skip + compound+ hashtags+ links+ punct + questions+ exclam+ numbers+ upcase+ lowcase+ firstup+ pt.lexicon + added+ verb.pro+ names+ en.lexicon+ rewrite+ mispell+ foreign+ emo. + emo..1 + emo..2 + laugh+ emph+ echars+ unkn)
+train_svm('conscientiousness_m', attributes, data_set[[1]], data_set[[2]])
 
 ############################################
 
+data_set <- create_partition('neuroticism_m')
+
 # NEUROTICISM
 
-op_1 <- new_personalities[new_personalities$neuroticism_m == 1,]
-op_2 <- new_personalities[new_personalities$neuroticism_m == 0,]
-
-# divide personalities by  (mean + sd) or (mean - sd)
-
-op_2_1 <- new_personalities[new_personalities$neuroticism_ober_2 == -1,]
-op_2_2 = new_personalities[new_personalities$neuroticism_ober_2 == 1,]
-
-#fazer um shuffle com esses dados
-
-extra_sorted_m <- rbind(op_1, op_2)
-extra_sorted_o <- rbind(op_2_1, op_2_2)
-
-paste(dim(extra_sorted_o)[1], dim(extra_sorted_m)[1])
-
-set.seed(78)
-training_data_rows <- createDataPartition(extra_sorted_m$neuroticism_m, p = .8, list = FALSE)
-train_data <- extra_sorted_m[training_data_rows,]
-test_data <- extra_sorted_m[-training_data_rows,]
-
-#LIWC
-svm_neu_ma_liwc <- svm(~ neuroticism_m + X1funct + X2pronoun + X3ppron +  X4i +  X5we +  X6you +  X7shehe +  X8they +  X9ipron +  X10article +  X11verb +  X12auxverb +  X13past +  X14present +  X15future +  X16adverb +  X17preps +  X18conj +  X19negate +  X20quant +  X21number +  X22swear +  X23social +  X24family +  X25friend +  X26humans +  X27affect +  X28posemo +  X29negemo +  X30anx +  X31anger +  X32sad +  X33cogmech +  X34insight +  X35cause +  X36discrep +  X37tentat +  X38certain +  X39inhib +  X40incl +  X41excl +  X42percept +  X43see +  X44hear +  X45feel +  X46bio +  X47body +  X48health +  X49sexual +  X50ingest +  X51relativ +  X52motion +  X53space +  X54time +  X55work +  X56achieve +  X57leisure +  X58home +  X59money +  X60relig +  X61death +  X62assent +  X63nonfl +  X64filler, data = train_data, gamma = 0.1)
-pred_svm_neu_ma_liwc <- predict(svm_neu_ma_liwc, test_data)
-tb_svm_neu_ma_liwc <-  table(as.numeric(pred_svm_neu_ma_liwc), test_data$neuroticism_m)
-precision(tb_svm_neu_ma_liwc)
-recall(tb_svm_neu_ma_liwc)
-F_meas(tb_svm_neu_ma_liwc)
-
 #SOCIAL
-svm_neu_ma_social <- svm(~ neuroticism_m + skip + compound + sentences + chars + allTokens + wordTokens + hashtags + links + punct + questions + exclam + numbers + upcase + lowcase + firstup + pt.lexicon + added + verb.pro + names + en.lexicon + rewrite + mispell + homograph + foreign + emo. + emo..1 + emo.. + laugh + emph + echars + unkn, data = train_data, gamma = 0.1)
-pred_svm_neu_ma_social <- predict(svm_neu_ma_social, test_data)
-tb_svm_neu_ma_social <- table(as.numeric(pred_svm_neu_ma_social), test_data$neuroticism_m)
-precision(tb_svm_neu_ma_social)
-recall(tb_svm_neu_ma_social)
-F_meas(tb_svm_neu_ma_social)
+attributes <- (as.factor(neuroticism_m) ~ sentences + items + chars + allTokens + wordTokens +  m+f+s+p+aument+dimin+superlat+N+A+PREP+CONJ+ADV+PREFIX+SIGLA+ABREV+INTERJ+DET+def+indef+NUM+numC+numO+numM+numF+PRO+proDem+proIndef+proRel+proInterr+proTrat+proPoss+proPess+acusativa+dativa+nominativa+obliqua+reflexa+p1+p2+p3+V+VW+VG+VK+VP+VI+VJ+VF+VQ+VS+VT+VU+VY+VC+V1s+V2s+V3s+V1p+V2p+V3p+X1funct + X2pronoun + X3ppron +  X4i +  X5we +  X6you +  X7shehe +  X8they +  X9ipron +  X10article +  X11verb +  X12auxverb +  X13past +  X14present +  X15future +  X16adverb +  X17preps +  X18conj +  X19negate +  X20quant +  X21number +  X22swear +  X23social +  X24family +  X25friend +  X26humans +  X27affect +  X28posemo +  X29negemo +  X30anx +  X31anger +  X32sad +  X33cogmech +  X34insight +  X35cause +  X36discrep +  X37tentat +  X38certain +  X39inhib +  X40incl +  X41excl +  X42percept +  X43see +  X44hear +  X45feel +  X46bio +  X47body +  X48health +  X49sexual +  X50ingest +  X51relativ +  X52motion +  X53space +  X54time +  X55work +  X56achieve +  X57leisure +  X58home +  X59money +  X60relig +  X61death +  X62assent +  X63nonfl +  X64filler + skip + compound+ hashtags+ links+ punct + questions+ exclam+ numbers+ upcase+ lowcase+ firstup+ pt.lexicon + added+ verb.pro+ names+ en.lexicon+ rewrite+ mispell+ foreign+ emo. + emo..1 + emo..2 + laugh+ emph+ echars+ unkn)
+train_svm('neuroticism_m', attributes, data_set[[1]], data_set[[2]])
 
 #GRAMMAR
-svm_neu_ma_gram <- svm(~ neuroticism_m + m+f+s+p+aument+dimin+superlat+N+A+PREP+CONJ+ADV+PREFIX+SIGLA+ABREV+INTERJ+DET+def+indef+NUM+numC+numO+numM+numF+PRO+proDem+proIndef+proRel+proInterr+proTrat+proPoss+proPess+acusativa+dativa+nominativa+obliqua+reflexa+p1+p2+p3+V+VW+VG+VK+VP+VI+VJ+VF+VQ+VS+VT+VU+VY+VC+V1s+V2s+V3s+V1p+V2p+V3p, data = train_data, gamma = 0.1)
-pred_svm_neu_ma_gram <- predict(svm_neu_ma_gram, test_data)
-tb_svm_neu_ma_gram <- table(as.numeric(pred_svm_neu_ma_gram), test_data$neuroticism_m)
-precision(tb_svm_neu_ma_gram)
-recall(tb_svm_neu_ma_gram)
-F_meas(tb_svm_neu_ma_gram)
+print('GRAMMAR')
+attributes <- (as.factor(neuroticism_m) ~ m+f+s+p+aument+dimin+superlat+N+A+PREP+CONJ+ADV+PREFIX+SIGLA+ABREV+INTERJ+DET+def+indef+NUM+numC+numO+numM+numF+PRO+proDem+proIndef+proRel+proInterr+proTrat+proPoss+proPess+acusativa+dativa+nominativa+obliqua+reflexa+p1+p2+p3+V+VW+VG+VK+VP+VI+VJ+VF+VQ+VS+VT+VU+VY+VC+V1s+V2s+V3s+V1p+V2p+V3p)
+train_svm('neuroticism_m', attributes, data_set[[1]], data_set[[2]])
+
+# LIWC
+print('LIWC')
+attributes <- as.factor(neuroticism_m) ~ X1funct + X2pronoun + X3ppron +  X4i +  X5we +  X6you +  X7shehe +  X8they +  X9ipron +  X10article +  X11verb +  X12auxverb +  X13past +  X14present +  X15future +  X16adverb +  X17preps +  X18conj +  X19negate +  X20quant +  X21number +  X22swear +  X23social +  X24family +  X25friend +  X26humans +  X27affect +  X28posemo +  X29negemo +  X30anx +  X31anger +  X32sad +  X33cogmech +  X34insight +  X35cause +  X36discrep +  X37tentat +  X38certain +  X39inhib +  X40incl +  X41excl +  X42percept +  X43see +  X44hear +  X45feel +  X46bio +  X47body +  X48health +  X49sexual +  X50ingest +  X51relativ +  X52motion +  X53space +  X54time +  X55work +  X56achieve +  X57leisure +  X58home +  X59money +  X60relig +  X61death +  X62assent +  X63nonfl +  X64filler 
+train_svm('neuroticism_m', attributes, data_set[[1]], data_set[[2]])
 
 #ALL
-svm_neu_ma_all <- svm(~ neuroticism_m +  X1funct + X2pronoun + X3ppron + X4i + X5we + X6you + X7shehe + X8they + X9ipron + X10article + X11verb + X12auxverb + X13past + X14present + X15future + X16adverb + X17preps + X18conj + X19negate + X20quant + X21number + X22swear + X23social + X24family + X25friend + X26humans + X27affect + X28posemo + X29negemo + X30anx + X31anger + X32sad + X33cogmech + X34insight + X35cause + X36discrep + X37tentat + X38certain + X39inhib + X40incl + X41excl + X42percept + X43see + X44hear + X45feel + X46bio + X47body + X48health + X49sexual + X50ingest + X51relativ + X52motion + X53space + X54time + X55work + X56achieve + X57leisure + X58home + X59money + X60relig + X61death + X62assent + X63nonfl + X64filler +  skip + compound + sentences + chars + allTokens + wordTokens + hashtags + links + punct + questions + exclam + numbers + upcase + lowcase + firstup + pt.lexicon + added + verb.pro + names + en.lexicon + rewrite + mispell + homograph + foreign + emo. + emo..1 + emo.. + laugh + emph + echars + unkn +  m + f + s + p + aument + dimin + superlat + N + A + PREP + CONJ + ADV + PREFIX + SIGLA + ABREV + INTERJ + DET + def + indef + NUM + numC + numO + numM + numF + PRO + proDem + proIndef + proRel + proInterr + proTrat + proPoss + proPess + acusativa + dativa + nominativa + obliqua + reflexa + p1 + p2 + p3 + V + VW + VG + VK + VP + VI + VJ + VF + VQ + VS + VT + VU + VY + VC + V1s + V2s + V3s + V1p + V2p + V3p, data = train_data, gamma = 0.1)
-pred_svm_neu_ma_all <- predict(svm_neu_ma_all, test_data)
-tb_svm_neu_ma_all <- table(as.numeric(pred_svm_neu_ma_all), test_data$neuroticism_m)
-precision(tb_svm_neu_ma_all)
-recall(tb_svm_neu_ma_all)
-F_meas(tb_svm_neu_ma_all)
-
-# BOOSTED TREES
-
-#LIWC
-gbm_neu_ma_liwc <- train(as.factor(neuroticism_m) ~ X1funct + X2pronoun + X3ppron +  X4i +  X5we +  X6you +  X7shehe +  X8they +  X9ipron +  X10article +  X11verb +  X12auxverb +  X13past +  X14present +  X15future +  X16adverb +  X17preps +  X18conj +  X19negate +  X20quant +  X21number +  X22swear +  X23social +  X24family +  X25friend +  X26humans +  X27affect +  X28posemo +  X29negemo +  X30anx +  X31anger +  X32sad +  X33cogmech +  X34insight +  X35cause +  X36discrep +  X37tentat +  X38certain +  X39inhib +  X40incl +  X41excl +  X42percept +  X43see +  X44hear +  X45feel +  X46bio +  X47body +  X48health +  X49sexual +  X50ingest +  X51relativ +  X52motion +  X53space +  X54time +  X55work +  X56achieve +  X57leisure +  X58home +  X59money +  X60relig +  X61death +  X62assent +  X63nonfl +  X64filler, data = train_data, method="gbm", verbose = FALSE)
-pred_gbm_neu_ma_liwc <- predict(gbm_neu_ma_liwc, test_data)
-tb_gbm_neu_ma_liwc <- table(pred_gbm_neu_ma_liwc, test_data$neuroticism_m)
-precision(tb_gbm_neu_ma_liwc)
-recall(tb_gbm_neu_ma_liwc)
-F_meas(tb_gbm_neu_ma_liwc)
-
-#SOCIAL
-gbm_neu_ma_social <- train(as.factor(neuroticism_m) ~   skip + compound + sentences + chars + allTokens + wordTokens + hashtags + links + punct + questions + exclam + numbers + upcase + lowcase + firstup + pt.lexicon + added + verb.pro + names + en.lexicon + rewrite + mispell + homograph + foreign + emo. + emo..1 + emo.. + laugh + emph + echars + unkn, data = train_data, method="gbm", verbose = FALSE)
-pred_gbm_neu_ma_social <- predict(gbm_neu_ma_social, test_data)
-tb_gbm_neu_ma_social <- table(pred_gbm_neu_ma_social, test_data$neuroticism_m)
-precision(tb_gbm_neu_ma_social)
-recall(tb_gbm_neu_ma_social)
-F_meas(tb_gbm_neu_ma_social)
-
-#GRAMMAR
-gbm_neu_ma_gram <- train(as.factor(neuroticism_m) ~ m+f+s+p+aument+dimin+superlat+N+A+PREP+CONJ+ADV+PREFIX+SIGLA+ABREV+INTERJ+DET+def+indef+NUM+numC+numO+numM+numF+PRO+proDem+proIndef+proRel+proInterr+proTrat+proPoss+proPess+acusativa+dativa+nominativa+obliqua+reflexa+p1+p2+p3+V+VW+VG+VK+VP+VI+VJ+VF+VQ+VS+VT+VU+VY+VC+V1s+V2s+V3s+V1p+V2p+V3p, data = train_data, method="gbm", verbose = FALSE)
-pred_gbm_neu_ma_gram <- predict(gbm_neu_ma_gram, test_data)
-tb_gbm_neu_ma_gram <- table(pred_gbm_neu_ma_gram, test_data$neuroticism_m)
-precision(tb_gbm_neu_ma_gram)
-recall(tb_gbm_neu_ma_gram)
-F_meas(tb_gbm_neu_ma_gram)
-
-#ALL
-
-gbl_neu_ma_all <- train(as.factor(neuroticism_m) ~  X1funct + X2pronoun + X3ppron + X4i + X5we + X6you + X7shehe + X8they + X9ipron + X10article + X11verb + X12auxverb + X13past + X14present + X15future + X16adverb + X17preps + X18conj + X19negate + X20quant + X21number + X22swear + X23social + X24family + X25friend + X26humans + X27affect + X28posemo + X29negemo + X30anx + X31anger + X32sad + X33cogmech + X34insight + X35cause + X36discrep + X37tentat + X38certain + X39inhib + X40incl + X41excl + X42percept + X43see + X44hear + X45feel + X46bio + X47body + X48health + X49sexual + X50ingest + X51relativ + X52motion + X53space + X54time + X55work + X56achieve + X57leisure + X58home + X59money + X60relig + X61death + X62assent + X63nonfl + X64filler +  skip + compound + sentences + chars + allTokens + wordTokens + hashtags + links + punct + questions + exclam + numbers + upcase + lowcase + firstup + pt.lexicon + added + verb.pro + names + en.lexicon + rewrite + mispell + homograph + foreign + emo. + emo..1 + emo.. + laugh + emph + echars + unkn +  m + f + s + p + aument + dimin + superlat + N + A + PREP + CONJ + ADV + PREFIX + SIGLA + ABREV + INTERJ + DET + def + indef + NUM + numC + numO + numM + numF + PRO + proDem + proIndef + proRel + proInterr + proTrat + proPoss + proPess + acusativa + dativa + nominativa + obliqua + reflexa + p1 + p2 + p3 + V + VW + VG + VK + VP + VI + VJ + VF + VQ + VS + VT + VU + VY + VC + V1s + V2s + V3s + V1p + V2p + V3p, data = train_data, method="gbm", verbose = FALSE)
-pred_gbl_neu_ma_all <- predict(gbl_neu_ma_all, test_data)
-tb_gbl_neu_ma_all <- table(pred_gbl_neu_ma_all, test_data$neuroticism_m)
-precision(tb_gbl_neu_ma_all)
-recall(tb_gbl_neu_ma_all)
-F_meas(tb_gbl_neu_ma_all)
+print('ALL')
+attributes <- (as.factor(neuroticism_m) ~ sentences + items + chars + allTokens + wordTokens +  m+f+s+p+aument+dimin+superlat+N+A+PREP+CONJ+ADV+PREFIX+SIGLA+ABREV+INTERJ+DET+def+indef+NUM+numC+numO+numM+numF+PRO+proDem+proIndef+proRel+proInterr+proTrat+proPoss+proPess+acusativa+dativa+nominativa+obliqua+reflexa+p1+p2+p3+V+VW+VG+VK+VP+VI+VJ+VF+VQ+VS+VT+VU+VY+VC+V1s+V2s+V3s+V1p+V2p+V3p+X1funct + X2pronoun + X3ppron +  X4i +  X5we +  X6you +  X7shehe +  X8they +  X9ipron +  X10article +  X11verb +  X12auxverb +  X13past +  X14present +  X15future +  X16adverb +  X17preps +  X18conj +  X19negate +  X20quant +  X21number +  X22swear +  X23social +  X24family +  X25friend +  X26humans +  X27affect +  X28posemo +  X29negemo +  X30anx +  X31anger +  X32sad +  X33cogmech +  X34insight +  X35cause +  X36discrep +  X37tentat +  X38certain +  X39inhib +  X40incl +  X41excl +  X42percept +  X43see +  X44hear +  X45feel +  X46bio +  X47body +  X48health +  X49sexual +  X50ingest +  X51relativ +  X52motion +  X53space +  X54time +  X55work +  X56achieve +  X57leisure +  X58home +  X59money +  X60relig +  X61death +  X62assent +  X63nonfl +  X64filler + skip + compound+ hashtags+ links+ punct + questions+ exclam+ numbers+ upcase+ lowcase+ firstup+ pt.lexicon + added+ verb.pro+ names+ en.lexicon+ rewrite+ mispell+ foreign+ emo. + emo..1 + emo..2 + laugh+ emph+ echars+ unkn)
+train_svm('neuroticism_m', attributes, data_set[[1]], data_set[[2]])
 
 ################
 
 # OPENESS
 
-op_1 <- new_personalities[new_personalities$openness_m == 1,]
-op_2 <- new_personalities[new_personalities$openness_m == 0,]
-
-# divide personalities by  (mean + sd) or (mean - sd)
-
-op_2_1 <- new_personalities[new_personalities$openness_ober_2 == -1,]
-op_2_2 = new_personalities[new_personalities$openness_ober_2 == 1,]
-
-#fazer um shuffle com esses dados
-
-extra_sorted_m <- rbind(op_1, op_2)
-extra_sorted_o <- rbind(op_2_1, op_2_2)
-
-paste(dim(extra_sorted_o)[1], dim(extra_sorted_m)[1])
-
-set.seed(78)
-training_data_rows <- createDataPartition(extra_sorted_m$openness_m, p = .8, list = FALSE)
-train_data <- extra_sorted_m[training_data_rows,]
-test_data <- extra_sorted_m[-training_data_rows,]
-
-#LIWC
-svm_open_ma_liwc <- svm(~ openness_m + X1funct + X2pronoun + X3ppron +  X4i +  X5we +  X6you +  X7shehe +  X8they +  X9ipron +  X10article +  X11verb +  X12auxverb +  X13past +  X14present +  X15future +  X16adverb +  X17preps +  X18conj +  X19negate +  X20quant +  X21number +  X22swear +  X23social +  X24family +  X25friend +  X26humans +  X27affect +  X28posemo +  X29negemo +  X30anx +  X31anger +  X32sad +  X33cogmech +  X34insight +  X35cause +  X36discrep +  X37tentat +  X38certain +  X39inhib +  X40incl +  X41excl +  X42percept +  X43see +  X44hear +  X45feel +  X46bio +  X47body +  X48health +  X49sexual +  X50ingest +  X51relativ +  X52motion +  X53space +  X54time +  X55work +  X56achieve +  X57leisure +  X58home +  X59money +  X60relig +  X61death +  X62assent +  X63nonfl +  X64filler, data = train_data, gamma = 0.1)
-pred_svm_open_ma_liwc <- predict(svm_open_ma_liwc, test_data)
-tb_svm_open_ma_liwc <- table(as.numeric(pred_svm_open_ma_liwc), test_data$openness_m)
-precision(tb_svm_open_ma_liwc)
-recall(tb_svm_open_ma_liwc)
-F_meas(tb_svm_open_ma_liwc)
+data_set <- create_partition('openness_m')
 
 #SOCIAL
-svm_open_ma_social <- svm(~ openness_m + skip + compound + sentences + chars + allTokens + wordTokens + hashtags + links + punct + questions + exclam + numbers + upcase + lowcase + firstup + pt.lexicon + added + verb.pro + names + en.lexicon + rewrite + mispell + homograph + foreign + emo. + emo..1 + emo.. + laugh + emph + echars + unkn, data = train_data, gamma = 0.1)
-pred_svm_open_ma_social <- predict(svm_open_ma_social, test_data)
-tb_svm_open_ma_social <- table(as.numeric(pred_svm_open_ma_social), test_data$openness_m)
-precision(tb_svm_open_ma_social)
-recall(tb_svm_open_ma_social)
-F_meas(tb_svm_open_ma_social)
+attributes <- (as.factor(openness_m) ~ sentences + items + chars + allTokens + wordTokens +  m+f+s+p+aument+dimin+superlat+N+A+PREP+CONJ+ADV+PREFIX+SIGLA+ABREV+INTERJ+DET+def+indef+NUM+numC+numO+numM+numF+PRO+proDem+proIndef+proRel+proInterr+proTrat+proPoss+proPess+acusativa+dativa+nominativa+obliqua+reflexa+p1+p2+p3+V+VW+VG+VK+VP+VI+VJ+VF+VQ+VS+VT+VU+VY+VC+V1s+V2s+V3s+V1p+V2p+V3p+X1funct + X2pronoun + X3ppron +  X4i +  X5we +  X6you +  X7shehe +  X8they +  X9ipron +  X10article +  X11verb +  X12auxverb +  X13past +  X14present +  X15future +  X16adverb +  X17preps +  X18conj +  X19negate +  X20quant +  X21number +  X22swear +  X23social +  X24family +  X25friend +  X26humans +  X27affect +  X28posemo +  X29negemo +  X30anx +  X31anger +  X32sad +  X33cogmech +  X34insight +  X35cause +  X36discrep +  X37tentat +  X38certain +  X39inhib +  X40incl +  X41excl +  X42percept +  X43see +  X44hear +  X45feel +  X46bio +  X47body +  X48health +  X49sexual +  X50ingest +  X51relativ +  X52motion +  X53space +  X54time +  X55work +  X56achieve +  X57leisure +  X58home +  X59money +  X60relig +  X61death +  X62assent +  X63nonfl +  X64filler + skip + compound+ hashtags+ links+ punct + questions+ exclam+ numbers+ upcase+ lowcase+ firstup+ pt.lexicon + added+ verb.pro+ names+ en.lexicon+ rewrite+ mispell+ foreign+ emo. + emo..1 + emo..2 + laugh+ emph+ echars+ unkn)
+train_svm('openness_m', attributes, data_set[[1]], data_set[[2]])
 
 #GRAMMAR
-svm_open_ma_gram <- svm(~ openness_m + m+f+s+p+aument+dimin+superlat+N+A+PREP+CONJ+ADV+PREFIX+SIGLA+ABREV+INTERJ+DET+def+indef+NUM+numC+numO+numM+numF+PRO+proDem+proIndef+proRel+proInterr+proTrat+proPoss+proPess+acusativa+dativa+nominativa+obliqua+reflexa+p1+p2+p3+V+VW+VG+VK+VP+VI+VJ+VF+VQ+VS+VT+VU+VY+VC+V1s+V2s+V3s+V1p+V2p+V3p, data = train_data, gamma = 0.1)
-pred_svm_open_ma_gram <- predict(svm_open_ma_gram, test_data)
-tb_svm_open_ma_gram <- table(as.numeric(pred_svm_open_ma_gram), test_data$openness_m)
-precision(tb_svm_open_ma_gram)
-recall(tb_svm_open_ma_gram)
-F_meas(tb_svm_open_ma_gram)
+print('GRAMMAR')
+attributes <- (as.factor(openness_m) ~ m+f+s+p+aument+dimin+superlat+N+A+PREP+CONJ+ADV+PREFIX+SIGLA+ABREV+INTERJ+DET+def+indef+NUM+numC+numO+numM+numF+PRO+proDem+proIndef+proRel+proInterr+proTrat+proPoss+proPess+acusativa+dativa+nominativa+obliqua+reflexa+p1+p2+p3+V+VW+VG+VK+VP+VI+VJ+VF+VQ+VS+VT+VU+VY+VC+V1s+V2s+V3s+V1p+V2p+V3p)
+train_svm('openness_m', attributes, data_set[[1]], data_set[[2]])
+
+### LIWC
+print('LIWC')
+attributes <- as.factor(openness_m) ~ X1funct + X2pronoun + X3ppron +  X4i +  X5we +  X6you +  X7shehe +  X8they +  X9ipron +  X10article +  X11verb +  X12auxverb +  X13past +  X14present +  X15future +  X16adverb +  X17preps +  X18conj +  X19negate +  X20quant +  X21number +  X22swear +  X23social +  X24family +  X25friend +  X26humans +  X27affect +  X28posemo +  X29negemo +  X30anx +  X31anger +  X32sad +  X33cogmech +  X34insight +  X35cause +  X36discrep +  X37tentat +  X38certain +  X39inhib +  X40incl +  X41excl +  X42percept +  X43see +  X44hear +  X45feel +  X46bio +  X47body +  X48health +  X49sexual +  X50ingest +  X51relativ +  X52motion +  X53space +  X54time +  X55work +  X56achieve +  X57leisure +  X58home +  X59money +  X60relig +  X61death +  X62assent +  X63nonfl +  X64filler 
+train_svm('openness_m', attributes, data_set[[1]], data_set[[2]])
 
 #ALL
-svm_open_ma_all <- svm(~ openness_m +  X1funct + X2pronoun + X3ppron + X4i + X5we + X6you + X7shehe + X8they + X9ipron + X10article + X11verb + X12auxverb + X13past + X14present + X15future + X16adverb + X17preps + X18conj + X19negate + X20quant + X21number + X22swear + X23social + X24family + X25friend + X26humans + X27affect + X28posemo + X29negemo + X30anx + X31anger + X32sad + X33cogmech + X34insight + X35cause + X36discrep + X37tentat + X38certain + X39inhib + X40incl + X41excl + X42percept + X43see + X44hear + X45feel + X46bio + X47body + X48health + X49sexual + X50ingest + X51relativ + X52motion + X53space + X54time + X55work + X56achieve + X57leisure + X58home + X59money + X60relig + X61death + X62assent + X63nonfl + X64filler +  skip + compound + sentences + chars + allTokens + wordTokens + hashtags + links + punct + questions + exclam + numbers + upcase + lowcase + firstup + pt.lexicon + added + verb.pro + names + en.lexicon + rewrite + mispell + homograph + foreign + emo. + emo..1 + emo.. + laugh + emph + echars + unkn +  m + f + s + p + aument + dimin + superlat + N + A + PREP + CONJ + ADV + PREFIX + SIGLA + ABREV + INTERJ + DET + def + indef + NUM + numC + numO + numM + numF + PRO + proDem + proIndef + proRel + proInterr + proTrat + proPoss + proPess + acusativa + dativa + nominativa + obliqua + reflexa + p1 + p2 + p3 + V + VW + VG + VK + VP + VI + VJ + VF + VQ + VS + VT + VU + VY + VC + V1s + V2s + V3s + V1p + V2p + V3p, data = train_data, gamma = 0.1)
-pred_svm_open_ma_all <- predict(svm_open_ma_all, test_data)
-tb_svm_open_ma_all <- table(as.numeric(pred_svm_open_ma_all), test_data$openness_m)
-precision(tb_svm_open_ma_all)
-recall(tb_svm_open_ma_all)
-F_meas(tb_svm_open_ma_all)
+print('ALL')
+attributes <- (as.factor(neuroticism_m) ~ sentences + items + chars + allTokens + wordTokens +  m+f+s+p+aument+dimin+superlat+N+A+PREP+CONJ+ADV+PREFIX+SIGLA+ABREV+INTERJ+DET+def+indef+NUM+numC+numO+numM+numF+PRO+proDem+proIndef+proRel+proInterr+proTrat+proPoss+proPess+acusativa+dativa+nominativa+obliqua+reflexa+p1+p2+p3+V+VW+VG+VK+VP+VI+VJ+VF+VQ+VS+VT+VU+VY+VC+V1s+V2s+V3s+V1p+V2p+V3p+X1funct + X2pronoun + X3ppron +  X4i +  X5we +  X6you +  X7shehe +  X8they +  X9ipron +  X10article +  X11verb +  X12auxverb +  X13past +  X14present +  X15future +  X16adverb +  X17preps +  X18conj +  X19negate +  X20quant +  X21number +  X22swear +  X23social +  X24family +  X25friend +  X26humans +  X27affect +  X28posemo +  X29negemo +  X30anx +  X31anger +  X32sad +  X33cogmech +  X34insight +  X35cause +  X36discrep +  X37tentat +  X38certain +  X39inhib +  X40incl +  X41excl +  X42percept +  X43see +  X44hear +  X45feel +  X46bio +  X47body +  X48health +  X49sexual +  X50ingest +  X51relativ +  X52motion +  X53space +  X54time +  X55work +  X56achieve +  X57leisure +  X58home +  X59money +  X60relig +  X61death +  X62assent +  X63nonfl +  X64filler + skip + compound+ hashtags+ links+ punct + questions+ exclam+ numbers+ upcase+ lowcase+ firstup+ pt.lexicon + added+ verb.pro+ names+ en.lexicon+ rewrite+ mispell+ foreign+ emo. + emo..1 + emo..2 + laugh+ emph+ echars+ unkn)
+train_svm('neuroticism_m', attributes, data_set[[1]], data_set[[2]])
 
-# BOOSTED TREES
+########################################
+########################################
+########################################
 
-#LIWC
-gbm_open_ma_liwc <- train(as.factor(openness_m) ~ X1funct + X2pronoun + X3ppron +  X4i +  X5we +  X6you +  X7shehe +  X8they +  X9ipron +  X10article +  X11verb +  X12auxverb +  X13past +  X14present +  X15future +  X16adverb +  X17preps +  X18conj +  X19negate +  X20quant +  X21number +  X22swear +  X23social +  X24family +  X25friend +  X26humans +  X27affect +  X28posemo +  X29negemo +  X30anx +  X31anger +  X32sad +  X33cogmech +  X34insight +  X35cause +  X36discrep +  X37tentat +  X38certain +  X39inhib +  X40incl +  X41excl +  X42percept +  X43see +  X44hear +  X45feel +  X46bio +  X47body +  X48health +  X49sexual +  X50ingest +  X51relativ +  X52motion +  X53space +  X54time +  X55work +  X56achieve +  X57leisure +  X58home +  X59money +  X60relig +  X61death +  X62assent +  X63nonfl +  X64filler, data = train_data, method="gbm", verbose = FALSE)
-pred_gbm_open_ma_liwc <- predict(gbm_open_ma_liwc, test_data)
-tb_gbm_open_ma_liwc <- table(pred_gbm_open_ma_liwc, test_data$openness_m)
-precision(tb_gbm_open_ma_liwc)
-recall(tb_gbm_open_ma_liwc)
-F_meas(tb_gbm_open_ma_liwc)
+### EXTRAVERSION
 
-#SOCIAL
-gbm_open_ma_social <- train(as.factor(openness_m) ~   skip + compound + sentences + chars + allTokens + wordTokens + hashtags + links + punct + questions + exclam + numbers + upcase + lowcase + firstup + pt.lexicon + added + verb.pro + names + en.lexicon + rewrite + mispell + homograph + foreign + emo. + emo..1 + emo.. + laugh + emph + echars + unkn, data = train_data, method="gbm", verbose = FALSE)
-pred_open_neu_ma_social <- predict(gbm_open_ma_social, test_data)
-tb_gbm_open_so_ma <- table(pred_open_neu_ma_social, test_data$openness_m)
-precision(tb_gbm_open_so_ma)
-recall(tb_gbm_open_so_ma)
-F_meas(tb_gbm_open_so_ma)
+data_set <- create_ober_partition('extraversion_ober_2')
 
-#GRAMMAR
-gbm_open_ma_gram <- train(as.factor(openness_m) ~ m+f+s+p+aument+dimin+superlat+N+A+PREP+CONJ+ADV+PREFIX+SIGLA+ABREV+INTERJ+DET+def+indef+NUM+numC+numO+numM+numF+PRO+proDem+proIndef+proRel+proInterr+proTrat+proPoss+proPess+acusativa+dativa+nominativa+obliqua+reflexa+p1+p2+p3+V+VW+VG+VK+VP+VI+VJ+VF+VQ+VS+VT+VU+VY+VC+V1s+V2s+V3s+V1p+V2p+V3p, data = train_data, method="gbm", verbose = FALSE)
-pred_open_neu_ma_gram <- predict(gbm_open_ma_gram, test_data)
-tb_gbm_open_gra_ma <- table(pred_open_neu_ma_gram, test_data$openness_m)
-precision(tb_gbm_open_gra_ma)
-recall(tb_gbm_open_gra_ma)
-F_meas(tb_gbm_open_gra_ma)
+### PRE PROC
+print('PRE PROC')
+attributes <- (as.factor(extraversion_ober_2) ~ skip + compound+ hashtags+ links+ punct + questions+ exclam+ numbers+ upcase+ lowcase+ firstup+ pt.lexicon + added+ verb.pro+ names+ en.lexicon+ rewrite+ mispell+ foreign+ emo. + emo..1 + emo..2 + laugh+ emph+ echars+ unkn)
+train_svm('extraversion_ober_2', attributes, data_set[[1]], data_set[[2]])
 
-#ALL
-gbl_open_ma_all <- train(as.factor(openness_m) ~  X1funct + X2pronoun + X3ppron + X4i + X5we + X6you + X7shehe + X8they + X9ipron + X10article + X11verb + X12auxverb + X13past + X14present + X15future + X16adverb + X17preps + X18conj + X19negate + X20quant + X21number + X22swear + X23social + X24family + X25friend + X26humans + X27affect + X28posemo + X29negemo + X30anx + X31anger + X32sad + X33cogmech + X34insight + X35cause + X36discrep + X37tentat + X38certain + X39inhib + X40incl + X41excl + X42percept + X43see + X44hear + X45feel + X46bio + X47body + X48health + X49sexual + X50ingest + X51relativ + X52motion + X53space + X54time + X55work + X56achieve + X57leisure + X58home + X59money + X60relig + X61death + X62assent + X63nonfl + X64filler +  skip + compound + sentences + chars + allTokens + wordTokens + hashtags + links + punct + questions + exclam + numbers + upcase + lowcase + firstup + pt.lexicon + added + verb.pro + names + en.lexicon + rewrite + mispell + homograph + foreign + emo. + emo..1 + emo.. + laugh + emph + echars + unkn +  m + f + s + p + aument + dimin + superlat + N + A + PREP + CONJ + ADV + PREFIX + SIGLA + ABREV + INTERJ + DET + def + indef + NUM + numC + numO + numM + numF + PRO + proDem + proIndef + proRel + proInterr + proTrat + proPoss + proPess + acusativa + dativa + nominativa + obliqua + reflexa + p1 + p2 + p3 + V + VW + VG + VK + VP + VI + VJ + VF + VQ + VS + VT + VU + VY + VC + V1s + V2s + V3s + V1p + V2p + V3p, data = train_data, method="gbm", verbose = FALSE)
-pred_gbl_open_ma_all <- predict(gbl_open_ma_all, test_data)
-tb_gbl_open_ma_all <- table(pred_gbl_open_ma_all, test_data$openness_m)
-precision(tb_gbl_open_ma_all)
-recall(tb_gbl_open_ma_all)
-F_meas(tb_gbl_open_ma_all)
+### GRAMMAR
+print('GRAMMAR')
+attributes <- (as.factor(extraversion_ober_2) ~ m+f+s+p+aument+dimin+superlat+N+A+PREP+CONJ+ADV+PREFIX+SIGLA+ABREV+INTERJ+DET+def+indef+NUM+numC+numO+numM+numF+PRO+proDem+proIndef+proRel+proInterr+proTrat+proPoss+proPess+acusativa+dativa+nominativa+obliqua+reflexa+p1+p2+p3+V+VW+VG+VK+VP+VI+VJ+VF+VQ+VS+VT+VU+VY+VC+V1s+V2s+V3s+V1p+V2p+V3p)
+train_svm('extraversion_ober_2', attributes, data_set[[1]], data_set[[2]])
 
+### LIWC
+print('LIWC')
+attributes <- as.factor(extraversion_ober_2) ~ X1funct + X2pronoun + X3ppron +  X4i +  X5we +  X6you +  X7shehe +  X8they +  X9ipron +  X10article +  X11verb +  X12auxverb +  X13past +  X14present +  X15future +  X16adverb +  X17preps +  X18conj +  X19negate +  X20quant +  X21number +  X22swear +  X23social +  X24family +  X25friend +  X26humans +  X27affect +  X28posemo +  X29negemo +  X30anx +  X31anger +  X32sad +  X33cogmech +  X34insight +  X35cause +  X36discrep +  X37tentat +  X38certain +  X39inhib +  X40incl +  X41excl +  X42percept +  X43see +  X44hear +  X45feel +  X46bio +  X47body +  X48health +  X49sexual +  X50ingest +  X51relativ +  X52motion +  X53space +  X54time +  X55work +  X56achieve +  X57leisure +  X58home +  X59money +  X60relig +  X61death +  X62assent +  X63nonfl +  X64filler 
+train_svm('extraversion_ober_2', attributes, data_set[[1]], data_set[[2]])
+
+### ALL
+print('ALL')
+attributes <- (as.factor(extraversion_ober_2) ~ sentences + items + chars + allTokens + wordTokens +  m+f+s+p+aument+dimin+superlat+N+A+PREP+CONJ+ADV+PREFIX+SIGLA+ABREV+INTERJ+DET+def+indef+NUM+numC+numO+numM+numF+PRO+proDem+proIndef+proRel+proInterr+proTrat+proPoss+proPess+acusativa+dativa+nominativa+obliqua+reflexa+p1+p2+p3+V+VW+VG+VK+VP+VI+VJ+VF+VQ+VS+VT+VU+VY+VC+V1s+V2s+V3s+V1p+V2p+V3p+X1funct + X2pronoun + X3ppron +  X4i +  X5we +  X6you +  X7shehe +  X8they +  X9ipron +  X10article +  X11verb +  X12auxverb +  X13past +  X14present +  X15future +  X16adverb +  X17preps +  X18conj +  X19negate +  X20quant +  X21number +  X22swear +  X23social +  X24family +  X25friend +  X26humans +  X27affect +  X28posemo +  X29negemo +  X30anx +  X31anger +  X32sad +  X33cogmech +  X34insight +  X35cause +  X36discrep +  X37tentat +  X38certain +  X39inhib +  X40incl +  X41excl +  X42percept +  X43see +  X44hear +  X45feel +  X46bio +  X47body +  X48health +  X49sexual +  X50ingest +  X51relativ +  X52motion +  X53space +  X54time +  X55work +  X56achieve +  X57leisure +  X58home +  X59money +  X60relig +  X61death +  X62assent +  X63nonfl +  X64filler + skip + compound+ hashtags+ links+ punct + questions+ exclam+ numbers+ upcase+ lowcase+ firstup+ pt.lexicon + added+ verb.pro+ names+ en.lexicon+ rewrite+ mispell+ foreign+ emo. + emo..1 + emo..2 + laugh+ emph+ echars+ unkn)
+train_svm('extraversion_ober_2', attributes, data_set[[1]], data_set[[2]])
+
+##############################################
+
+### AGREEABLENESS
+
+data_set <- create_ober_partition('agreeableness_ober_2')
+
+### PRE PROC
+print('PRE PROC')
+attributes <- (as.factor(agreeableness_ober_2) ~ skip + compound+ hashtags+ links+ punct + questions+ exclam+ numbers+ upcase+ lowcase+ firstup+ pt.lexicon + added+ verb.pro+ names+ en.lexicon+ rewrite+ mispell+ foreign+ emo. + emo..1 + emo..2 + laugh+ emph+ echars+ unkn)
+train_svm('agreeableness_ober_2', attributes, data_set[[1]], data_set[[2]])
+
+### GRAMMAR
+print('GRAMMAR')
+attributes <- (as.factor(agreeableness_ober_2) ~ m+f+s+p+aument+dimin+superlat+N+A+PREP+CONJ+ADV+PREFIX+SIGLA+ABREV+INTERJ+DET+def+indef+NUM+numC+numO+numM+numF+PRO+proDem+proIndef+proRel+proInterr+proTrat+proPoss+proPess+acusativa+dativa+nominativa+obliqua+reflexa+p1+p2+p3+V+VW+VG+VK+VP+VI+VJ+VF+VQ+VS+VT+VU+VY+VC+V1s+V2s+V3s+V1p+V2p+V3p)
+train_svm('agreeableness_ober_2', attributes, data_set[[1]], data_set[[2]])
+
+### LIWC
+print('LIWC')
+attributes <- as.factor(agreeableness_ober_2) ~ X1funct + X2pronoun + X3ppron +  X4i +  X5we +  X6you +  X7shehe +  X8they +  X9ipron +  X10article +  X11verb +  X12auxverb +  X13past +  X14present +  X15future +  X16adverb +  X17preps +  X18conj +  X19negate +  X20quant +  X21number +  X22swear +  X23social +  X24family +  X25friend +  X26humans +  X27affect +  X28posemo +  X29negemo +  X30anx +  X31anger +  X32sad +  X33cogmech +  X34insight +  X35cause +  X36discrep +  X37tentat +  X38certain +  X39inhib +  X40incl +  X41excl +  X42percept +  X43see +  X44hear +  X45feel +  X46bio +  X47body +  X48health +  X49sexual +  X50ingest +  X51relativ +  X52motion +  X53space +  X54time +  X55work +  X56achieve +  X57leisure +  X58home +  X59money +  X60relig +  X61death +  X62assent +  X63nonfl +  X64filler 
+train_svm('agreeableness_ober_2', attributes, data_set[[1]], data_set[[2]])
+
+### ALL
+print('ALL')
+attributes <- (as.factor(agreeableness_ober_2) ~ sentences + items + chars + allTokens + wordTokens +  m+f+s+p+aument+dimin+superlat+N+A+PREP+CONJ+ADV+PREFIX+SIGLA+ABREV+INTERJ+DET+def+indef+NUM+numC+numO+numM+numF+PRO+proDem+proIndef+proRel+proInterr+proTrat+proPoss+proPess+acusativa+dativa+nominativa+obliqua+reflexa+p1+p2+p3+V+VW+VG+VK+VP+VI+VJ+VF+VQ+VS+VT+VU+VY+VC+V1s+V2s+V3s+V1p+V2p+V3p+X1funct + X2pronoun + X3ppron +  X4i +  X5we +  X6you +  X7shehe +  X8they +  X9ipron +  X10article +  X11verb +  X12auxverb +  X13past +  X14present +  X15future +  X16adverb +  X17preps +  X18conj +  X19negate +  X20quant +  X21number +  X22swear +  X23social +  X24family +  X25friend +  X26humans +  X27affect +  X28posemo +  X29negemo +  X30anx +  X31anger +  X32sad +  X33cogmech +  X34insight +  X35cause +  X36discrep +  X37tentat +  X38certain +  X39inhib +  X40incl +  X41excl +  X42percept +  X43see +  X44hear +  X45feel +  X46bio +  X47body +  X48health +  X49sexual +  X50ingest +  X51relativ +  X52motion +  X53space +  X54time +  X55work +  X56achieve +  X57leisure +  X58home +  X59money +  X60relig +  X61death +  X62assent +  X63nonfl +  X64filler + skip + compound+ hashtags+ links+ punct + questions+ exclam+ numbers+ upcase+ lowcase+ firstup+ pt.lexicon + added+ verb.pro+ names+ en.lexicon+ rewrite+ mispell+ foreign+ emo. + emo..1 + emo..2 + laugh+ emph+ echars+ unkn)
+train_svm('agreeableness_ober_2', attributes, data_set[[1]], data_set[[2]])
 
 ############################
 
+#CONSCIENTIOUSNESS
 
+data_set <- create_ober_partition('conscientiousness_ober_2')
+
+### PRE PROC
+print('PRE PROC')
+attributes <- (as.factor(conscientiousness_ober_2) ~ skip + compound+ hashtags+ links+ punct + questions+ exclam+ numbers+ upcase+ lowcase+ firstup+ pt.lexicon + added+ verb.pro+ names+ en.lexicon+ rewrite+ mispell+ foreign+ emo. + emo..1 + emo..2 + laugh+ emph+ echars+ unkn)
+train_svm('conscientiousness_ober_2', attributes, data_set[[1]], data_set[[2]])
+
+### GRAMMAR
+print('GRAMMAR')
+attributes <- (as.factor(conscientiousness_ober_2) ~ m+f+s+p+aument+dimin+superlat+N+A+PREP+CONJ+ADV+PREFIX+SIGLA+ABREV+INTERJ+DET+def+indef+NUM+numC+numO+numM+numF+PRO+proDem+proIndef+proRel+proInterr+proTrat+proPoss+proPess+acusativa+dativa+nominativa+obliqua+reflexa+p1+p2+p3+V+VW+VG+VK+VP+VI+VJ+VF+VQ+VS+VT+VU+VY+VC+V1s+V2s+V3s+V1p+V2p+V3p)
+train_svm('conscientiousness_ober_2', attributes, data_set[[1]], data_set[[2]])
+
+### LIWC
+print('LIWC')
+attributes <- as.factor(conscientiousness_ober_2) ~ X1funct + X2pronoun + X3ppron +  X4i +  X5we +  X6you +  X7shehe +  X8they +  X9ipron +  X10article +  X11verb +  X12auxverb +  X13past +  X14present +  X15future +  X16adverb +  X17preps +  X18conj +  X19negate +  X20quant +  X21number +  X22swear +  X23social +  X24family +  X25friend +  X26humans +  X27affect +  X28posemo +  X29negemo +  X30anx +  X31anger +  X32sad +  X33cogmech +  X34insight +  X35cause +  X36discrep +  X37tentat +  X38certain +  X39inhib +  X40incl +  X41excl +  X42percept +  X43see +  X44hear +  X45feel +  X46bio +  X47body +  X48health +  X49sexual +  X50ingest +  X51relativ +  X52motion +  X53space +  X54time +  X55work +  X56achieve +  X57leisure +  X58home +  X59money +  X60relig +  X61death +  X62assent +  X63nonfl +  X64filler 
+train_svm('conscientiousness_ober_2', attributes, data_set[[1]], data_set[[2]])
+
+### ALL
+print('ALL')
+attributes <- (as.factor(conscientiousness_ober_2) ~ sentences + items + chars + allTokens + wordTokens +  m+f+s+p+aument+dimin+superlat+N+A+PREP+CONJ+ADV+PREFIX+SIGLA+ABREV+INTERJ+DET+def+indef+NUM+numC+numO+numM+numF+PRO+proDem+proIndef+proRel+proInterr+proTrat+proPoss+proPess+acusativa+dativa+nominativa+obliqua+reflexa+p1+p2+p3+V+VW+VG+VK+VP+VI+VJ+VF+VQ+VS+VT+VU+VY+VC+V1s+V2s+V3s+V1p+V2p+V3p+X1funct + X2pronoun + X3ppron +  X4i +  X5we +  X6you +  X7shehe +  X8they +  X9ipron +  X10article +  X11verb +  X12auxverb +  X13past +  X14present +  X15future +  X16adverb +  X17preps +  X18conj +  X19negate +  X20quant +  X21number +  X22swear +  X23social +  X24family +  X25friend +  X26humans +  X27affect +  X28posemo +  X29negemo +  X30anx +  X31anger +  X32sad +  X33cogmech +  X34insight +  X35cause +  X36discrep +  X37tentat +  X38certain +  X39inhib +  X40incl +  X41excl +  X42percept +  X43see +  X44hear +  X45feel +  X46bio +  X47body +  X48health +  X49sexual +  X50ingest +  X51relativ +  X52motion +  X53space +  X54time +  X55work +  X56achieve +  X57leisure +  X58home +  X59money +  X60relig +  X61death +  X62assent +  X63nonfl +  X64filler + skip + compound+ hashtags+ links+ punct + questions+ exclam+ numbers+ upcase+ lowcase+ firstup+ pt.lexicon + added+ verb.pro+ names+ en.lexicon+ rewrite+ mispell+ foreign+ emo. + emo..1 + emo..2 + laugh+ emph+ echars+ unkn)
+train_svm('conscientiousness_ober_2', attributes, data_set[[1]], data_set[[2]])
+
+############################################
+
+# NEUROTICISM
+
+data_set <- create_ober_partition('neuroticism_ober_2')
+
+### PRE PROC
+print('PRE PROC')
+attributes <- (as.factor(neuroticism_ober_2) ~ skip + compound+ hashtags+ links+ punct + questions+ exclam+ numbers+ upcase+ lowcase+ firstup+ pt.lexicon + added+ verb.pro+ names+ en.lexicon+ rewrite+ mispell+ foreign+ emo. + emo..1 + emo..2 + laugh+ emph+ echars+ unkn)
+train_svm('neuroticism_ober_2', attributes, data_set[[1]], data_set[[2]])
+
+### GRAMMAR
+print('GRAMMAR')
+attributes <- (as.factor(neuroticism_ober_2) ~ m+f+s+p+aument+dimin+superlat+N+A+PREP+CONJ+ADV+PREFIX+SIGLA+ABREV+INTERJ+DET+def+indef+NUM+numC+numO+numM+numF+PRO+proDem+proIndef+proRel+proInterr+proTrat+proPoss+proPess+acusativa+dativa+nominativa+obliqua+reflexa+p1+p2+p3+V+VW+VG+VK+VP+VI+VJ+VF+VQ+VS+VT+VU+VY+VC+V1s+V2s+V3s+V1p+V2p+V3p)
+train_svm('neuroticism_ober_2', attributes, data_set[[1]], data_set[[2]])
+
+### LIWC
+print('LIWC')
+attributes <- as.factor(neuroticism_ober_2) ~ X1funct + X2pronoun + X3ppron +  X4i +  X5we +  X6you +  X7shehe +  X8they +  X9ipron +  X10article +  X11verb +  X12auxverb +  X13past +  X14present +  X15future +  X16adverb +  X17preps +  X18conj +  X19negate +  X20quant +  X21number +  X22swear +  X23social +  X24family +  X25friend +  X26humans +  X27affect +  X28posemo +  X29negemo +  X30anx +  X31anger +  X32sad +  X33cogmech +  X34insight +  X35cause +  X36discrep +  X37tentat +  X38certain +  X39inhib +  X40incl +  X41excl +  X42percept +  X43see +  X44hear +  X45feel +  X46bio +  X47body +  X48health +  X49sexual +  X50ingest +  X51relativ +  X52motion +  X53space +  X54time +  X55work +  X56achieve +  X57leisure +  X58home +  X59money +  X60relig +  X61death +  X62assent +  X63nonfl +  X64filler 
+train_svm('neuroticism_ober_2', attributes, data_set[[1]], data_set[[2]])
+
+### ALL
+print('ALL')
+attributes <- (as.factor(neuroticism_ober_2) ~ sentences + items + chars + allTokens + wordTokens +  m+f+s+p+aument+dimin+superlat+N+A+PREP+CONJ+ADV+PREFIX+SIGLA+ABREV+INTERJ+DET+def+indef+NUM+numC+numO+numM+numF+PRO+proDem+proIndef+proRel+proInterr+proTrat+proPoss+proPess+acusativa+dativa+nominativa+obliqua+reflexa+p1+p2+p3+V+VW+VG+VK+VP+VI+VJ+VF+VQ+VS+VT+VU+VY+VC+V1s+V2s+V3s+V1p+V2p+V3p+X1funct + X2pronoun + X3ppron +  X4i +  X5we +  X6you +  X7shehe +  X8they +  X9ipron +  X10article +  X11verb +  X12auxverb +  X13past +  X14present +  X15future +  X16adverb +  X17preps +  X18conj +  X19negate +  X20quant +  X21number +  X22swear +  X23social +  X24family +  X25friend +  X26humans +  X27affect +  X28posemo +  X29negemo +  X30anx +  X31anger +  X32sad +  X33cogmech +  X34insight +  X35cause +  X36discrep +  X37tentat +  X38certain +  X39inhib +  X40incl +  X41excl +  X42percept +  X43see +  X44hear +  X45feel +  X46bio +  X47body +  X48health +  X49sexual +  X50ingest +  X51relativ +  X52motion +  X53space +  X54time +  X55work +  X56achieve +  X57leisure +  X58home +  X59money +  X60relig +  X61death +  X62assent +  X63nonfl +  X64filler + skip + compound+ hashtags+ links+ punct + questions+ exclam+ numbers+ upcase+ lowcase+ firstup+ pt.lexicon + added+ verb.pro+ names+ en.lexicon+ rewrite+ mispell+ foreign+ emo. + emo..1 + emo..2 + laugh+ emph+ echars+ unkn)
+train_svm('neuroticism_ober_2', attributes, data_set[[1]], data_set[[2]])
+
+################
+
+# OPENESS
+
+data_set <- create_ober_partition('openness_ober_2')
+
+### PRE PROC
+print('PRE PROC')
+attributes <- (as.factor(openness_ober_2) ~ skip + compound+ hashtags+ links+ punct + questions+ exclam+ numbers+ upcase+ lowcase+ firstup+ pt.lexicon + added+ verb.pro+ names+ en.lexicon+ rewrite+ mispell+ foreign+ emo. + emo..1 + emo..2 + laugh+ emph+ echars+ unkn)
+train_svm('openness_ober_2', attributes, data_set[[1]], data_set[[2]])
+
+### GRAMMAR
+print('GRAMMAR')
+attributes <- (as.factor(openness_ober_2) ~ m+f+s+p+aument+dimin+superlat+N+A+PREP+CONJ+ADV+PREFIX+SIGLA+ABREV+INTERJ+DET+def+indef+NUM+numC+numO+numM+numF+PRO+proDem+proIndef+proRel+proInterr+proTrat+proPoss+proPess+acusativa+dativa+nominativa+obliqua+reflexa+p1+p2+p3+V+VW+VG+VK+VP+VI+VJ+VF+VQ+VS+VT+VU+VY+VC+V1s+V2s+V3s+V1p+V2p+V3p)
+train_svm('openness_ober_2', attributes, data_set[[1]], data_set[[2]])
+
+### LIWC
+print('LIWC')
+attributes <- as.factor(openness_ober_2) ~ X1funct + X2pronoun + X3ppron +  X4i +  X5we +  X6you +  X7shehe +  X8they +  X9ipron +  X10article +  X11verb +  X12auxverb +  X13past +  X14present +  X15future +  X16adverb +  X17preps +  X18conj +  X19negate +  X20quant +  X21number +  X22swear +  X23social +  X24family +  X25friend +  X26humans +  X27affect +  X28posemo +  X29negemo +  X30anx +  X31anger +  X32sad +  X33cogmech +  X34insight +  X35cause +  X36discrep +  X37tentat +  X38certain +  X39inhib +  X40incl +  X41excl +  X42percept +  X43see +  X44hear +  X45feel +  X46bio +  X47body +  X48health +  X49sexual +  X50ingest +  X51relativ +  X52motion +  X53space +  X54time +  X55work +  X56achieve +  X57leisure +  X58home +  X59money +  X60relig +  X61death +  X62assent +  X63nonfl +  X64filler 
+train_svm('openness_ober_2', attributes, data_set[[1]], data_set[[2]])
+
+### ALL
+print('ALL')
+attributes <- (as.factor(openness_ober_2) ~ sentences + items + chars + allTokens + wordTokens +  m+f+s+p+aument+dimin+superlat+N+A+PREP+CONJ+ADV+PREFIX+SIGLA+ABREV+INTERJ+DET+def+indef+NUM+numC+numO+numM+numF+PRO+proDem+proIndef+proRel+proInterr+proTrat+proPoss+proPess+acusativa+dativa+nominativa+obliqua+reflexa+p1+p2+p3+V+VW+VG+VK+VP+VI+VJ+VF+VQ+VS+VT+VU+VY+VC+V1s+V2s+V3s+V1p+V2p+V3p+X1funct + X2pronoun + X3ppron +  X4i +  X5we +  X6you +  X7shehe +  X8they +  X9ipron +  X10article +  X11verb +  X12auxverb +  X13past +  X14present +  X15future +  X16adverb +  X17preps +  X18conj +  X19negate +  X20quant +  X21number +  X22swear +  X23social +  X24family +  X25friend +  X26humans +  X27affect +  X28posemo +  X29negemo +  X30anx +  X31anger +  X32sad +  X33cogmech +  X34insight +  X35cause +  X36discrep +  X37tentat +  X38certain +  X39inhib +  X40incl +  X41excl +  X42percept +  X43see +  X44hear +  X45feel +  X46bio +  X47body +  X48health +  X49sexual +  X50ingest +  X51relativ +  X52motion +  X53space +  X54time +  X55work +  X56achieve +  X57leisure +  X58home +  X59money +  X60relig +  X61death +  X62assent +  X63nonfl +  X64filler + skip + compound+ hashtags+ links+ punct + questions+ exclam+ numbers+ upcase+ lowcase+ firstup+ pt.lexicon + added+ verb.pro+ names+ en.lexicon+ rewrite+ mispell+ foreign+ emo. + emo..1 + emo..2 + laugh+ emph+ echars+ unkn)
+train_svm('openness_ober_2', attributes, data_set[[1]], data_set[[2]])
+
+############################
