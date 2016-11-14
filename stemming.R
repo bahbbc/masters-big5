@@ -1,13 +1,12 @@
 library(tm)
 library(ggplot2)
 
-corpus <- read.csv('/home/barbara/workspace/masters/post/17-vocabulary.csv', header = TRUE, encoding="latin1", stringsAsFactors=FALSE, sep = ';')
+
+corpus <- read.csv('~/workspace/masters/post/17-vocabulary.csv', header = TRUE, encoding="latin1", stringsAsFactors=FALSE, sep = ';')
 
 corpus <- rep(corpus$word, corpus$frequency)
 
 c <- Corpus(VectorSource(corpus))
-
-c <- tm_map(c, removeWords, custom_stopwords)
 
 c <- tm_map(c, stemDocument, language = "portuguese")
 
