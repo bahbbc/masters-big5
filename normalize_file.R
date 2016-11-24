@@ -30,6 +30,9 @@ write.csv(personality_data_frame, file = 'personality-normalized.csv')
 
 traits = read.csv('~/workspace/masters/barbara2.csv', header = TRUE, sep = ',')
 
+# corrigir isso depois
+traits <- read.csv('personality_terms.csv',  header = TRUE)
+
 divide_by_mean <- function(personality) {
   m <- mean(personality)
   personality_1 <- which(personality > m)
@@ -66,6 +69,12 @@ personality_data_frame <- cbind(traits, extraversion_m, agreeabeness_m, conscien
   neuroticism_m, openness_m,extraversion_ober_2, agreeableness_ober_2, conscientiousness_ober_2, neuroticism_ober_2, openness_ober_2)
 
 write.csv(personality_data_frame, file = 'personality-normalized.csv')
+
+#aqui tbm
+personality_data_frame <- cbind(traits, extraversion_m, agreeabeness_m, conscientiousness_m,
+                                neuroticism_m, openness_m)
+
+write.csv(personality_data_frame, file = 'personality-normalized-ngram.csv')
 
 #concat all col_names with per_word
 paste(names(personality[1]), 'per_word', sep='_')

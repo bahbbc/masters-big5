@@ -7,10 +7,9 @@ personalities <- read.csv('~/workspace/masters/final_normalized_file.csv')
 c <- Corpus(DirSource('~/workspace/masters/post', encoding="latin1"), readerControl = list(language="portuguese"))
   
 c <- tm_map(c, stemDocument, language = "portuguese")
-c <- tm_map(c, removePunctuation) 
 c <- tm_map(c, removeNumbers)
   
-dtm <- DocumentTermMatrix(c)
+#dtm <- DocumentTermMatrix(c)
   
 tdm <- DocumentTermMatrix(c)
   
@@ -26,6 +25,6 @@ personalities_tmp <- data.frame(id = personalities$id, extraversion = personalit
   
 personality_terms <- merge(personalities_tmp, tm_data, by.x= 'id', by.y = 'file_name')
   
-write.csv(tm_data, 'personality_terms.csv')
+write.csv(personality_terms, 'personality_terms.csv')
 
 ggplot(df, aes(x = df$term, y = df$freq)) + geom_bar(stat = "identity") + xlab("Terms") + ylab("Count") + coord_flip()
