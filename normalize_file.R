@@ -1,5 +1,5 @@
 # read personality CSV
-personality = read.csv('Desktop/Coursera/fb-stats-2.csv', header = TRUE, sep = ';')
+personality = read.csv('vocabulary.csv', header = TRUE, sep = ',')
 
 #word data
 word_len = personality$items
@@ -25,13 +25,8 @@ personality_data_frame <- cbind(personality_data, words, id)
 
 write.csv(personality_data_frame, file = 'personality-normalized.csv')
 
-
-#traits normalization
-
-traits = read.csv('~/workspace/masters/barbara2.csv', header = TRUE, sep = ',')
-
 # corrigir isso depois
-traits <- read.csv('personality_terms.csv',  header = TRUE)
+traits = read.csv('final_normalized_file.csv', header = TRUE, sep = ',')
 
 divide_by_mean <- function(personality) {
   m <- mean(personality)
@@ -76,7 +71,5 @@ personality_data_frame <- cbind(traits, extraversion_m, agreeabeness_m, conscien
 
 write.csv(personality_data_frame, file = 'personality-normalized-ngram.csv')
 
-#concat all col_names with per_word
-paste(names(personality[1]), 'per_word', sep='_')
 
 #:) Bah fofinha s2
