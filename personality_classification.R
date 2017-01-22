@@ -2,44 +2,10 @@ library(caret)
 library(e1071)
 library(gbm)
 set.seed(78)
-library(Matrix)
-library(SparseM)
 
 personalities <- read.csv('personality-normalized.csv')
 personalities <- sapply(personalities, function(x) as.numeric(as.matrix(x)))
 personalities <- as.data.frame(personalities)
-
-word_grams <- read.csv('personality-normalized-ngram.csv')
-
-#count words frequencies - total 21094 stemmed words
-length(colSums(word_grams)[colSums(word_grams) > 100])
-# 1377 words appears more than 100 times =O
-
-# divide extremes of a dimension - done
-
-
-# separate train and test - done
-
-new_personalities <- word_grams
-data_set <- create_partition('extraversion_m')
-
-#remove useless columns
-
-data_without_labels <- data_set[[1]][9:21096]
-test_data <- cbind(data_set[[2]][21097], data_set[[2]][9:21096])
-
-# train
-
-data_without_labels <- Matrix(as.matrix(data_without_labels), sparse = TRUE)
-
-train_svm('extraversion_m', data_without_labels[,1] ~ data_without_labels[,2:ncol(data_without_labels)], data_without_labels, data_set[[2]])
-
-# does not work with sparseM
-# svm_model <- svm(data_without_labels[,1] ~., data = data_without_labels, kernel = 'linear')
-
-#specify the features, vector to be predicted, and kernel method in the svm model
-svm_model <- svm(data_without_labels, as.factor(data_set[[1]][21097][,1]), kernel = 'linear')
-truth_table <- table(predict(svm_model, data_set[[2]][9:21096]), as.factor(data_set[[2]][21097][,1]))
 
 # remove texts with few words
 
